@@ -1,0 +1,76 @@
+PASTILLERO — CÓMO SUBIRLO A GITHUB PAGES
+========================================
+
+En GitHub va SOLO LA APP. No hay ningún dato personal en estos archivos.
+Los datos de cada persona (pacientes, pastillas, citas, presión, tomas marcadas)
+se guardan dentro de SU teléfono y nunca se suben a internet.
+
+Archivos de esta carpeta (súbelos todos, sin carpetas):
+  index.html            la app
+  manifest.webmanifest  para que se instale como app
+  sw.js                 para que funcione sin internet y se actualice sola
+  icon-192.png / icon-512.png   el ícono (tu doctor pixel)
+  robots.txt            para que Google no la muestre en búsquedas
+
+
+1. SUBIRLA (una sola vez)
+-------------------------
+ 1) Entra a https://github.com y crea una cuenta (o inicia sesión).
+ 2) "+" (arriba a la derecha) -> "New repository".
+    Nombre: por ejemplo  pastillero . Déjalo "Public". -> "Create repository".
+ 3) "uploading an existing file" -> arrastra los 6 archivos -> "Commit changes".
+ 4) "Settings" -> "Pages" -> Branch:  main  y  / (root)  -> "Save".
+ 5) En 1-2 minutos queda en:   https://TU-USUARIO.github.io/pastillero/
+    IMPORTANTE: no cambies después el nombre del repositorio ni tu usuario.
+    Los datos de cada teléfono van ligados a esa dirección.
+
+
+2. INSTALARLA EN UN TELÉFONO (por ejemplo el de tu mamá)
+--------------------------------------------------------
+ 1) Abre la dirección en Chrome -> menú (3 puntitos) ->
+    "Instalar app" o "Agregar a la pantalla principal".
+ 2) Abre la app y toca "Toque aquí para empezar".
+ 3) La primera vez el teléfono está vacío. Hay dos formas de poner sus datos:
+    a) Cargar un respaldo (lo más fácil):
+       - En tu página del Pastillero en Claude: pestaña "Paciente" ->
+         "Descargar respaldo (.json)".
+       - Mándale ese archivo por WhatsApp al teléfono de ella y descárgalo.
+       - En la app de ella: "Cargar mis datos" -> escoge el archivo.
+    b) Escribirlos ahí mismo: "Escribir los datos aquí".
+ 4) Pon también las alarmas en la app Reloj de ESE teléfono
+    (la app solo avisa mientras está abierta; las alarmas suenan siempre):
+       8:00 a.m.  Losartán + Hidroclorotiazida y Tolterodina
+       3:00 p.m.  Nifedipino
+       8:00 p.m.  Tolterodina
+       9:00 p.m.  Losartán y Ezetimiba + Simvastatina
+
+
+3. ACTUALIZAR LA APP
+--------------------
+Cuando tengas una versión nueva de index.html:
+  En tu repositorio -> "Add file" -> "Upload files" -> sube el index.html nuevo
+  (reemplaza al anterior) -> "Commit changes".
+La próxima vez que abran la app con internet, se carga la versión nueva sola.
+Los datos de cada teléfono NO se borran ni se tocan.
+Abajo de la app dice la versión, para que sepas que ya se actualizó.
+
+
+4. CAMBIAR SUS MEDICAMENTOS O CITAS DESPUÉS
+-------------------------------------------
+Como los datos viven en su teléfono, hay dos opciones:
+  - Cambiarlos directo en su teléfono: "Salir del modo sencillo"
+    (tocar 2 veces) -> pestaña "Medicamentos" o "Citas".
+  - O cambiarlos en tu página de Claude, descargar un respaldo nuevo,
+    mandárselo y cargarlo en su app (en modo normal: pestaña "Paciente" ->
+    "Cargar respaldo…" -> "Reemplazar todo").
+    Ojo: "Reemplazar todo" cambia también las tomas que ella haya marcado
+    por las de tu respaldo. Si quieres conservarlas, usa "Agregar a lo que ya hay".
+
+
+5. CUIDAR LOS DATOS
+-------------------
+Si en ese teléfono se borran los "datos de sitios" de Chrome o se desinstala
+Chrome, se borran los datos del pastillero. De vez en cuando, en su teléfono:
+pestaña "Paciente" -> "Descargar respaldo (.json)" y guárdalo (o mándatelo).
+
+@cybercadtm
