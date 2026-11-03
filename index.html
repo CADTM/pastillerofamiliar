@@ -1063,7 +1063,7 @@ async function syncRemote(){
   }catch{}
 }
 document.addEventListener("visibilitychange", () => { if(!document.hidden) syncRemote(); });
-const APP_VER = "2 nov 2026";
+const APP_VER = "2 nov 2026 (b)";
 document.querySelectorAll(".appver").forEach(e => e.textContent = "versión " + APP_VER);
 if(!window.claude){
   if("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
@@ -1634,7 +1634,7 @@ function renderSPanel(){
       <button class="s-big" id="sSaveBP">Guardar</button></div>`;
     $("#sSaveBP").onclick = sSaveBP;
   }
-  box.querySelectorAll("[data-stake]").forEach(b => b.onclick = () => { const [id,t] = b.dataset.stake.split("|"); const d = sDoses().find(x => x.medId===id && x.t===Number(t)); if(d) sTake([d]); });
+
 }
 async function sSaveBP(){
   const sis = parseInt($("#sSis").value, 10), dia = parseInt($("#sDia").value, 10), pul = parseInt($("#sPul").value, 10);
@@ -1671,6 +1671,14 @@ async function sLoadBackup(e){
   await importData(clean, true);
   SM.lastMini = null; renderSimple(); sSay(`Listo. ${sNowText()}`);
 }
+$("#simple").addEventListener("click", e => {
+  const b = e.target.closest("[data-stake]"); if(!b) return;
+  e.preventDefault(); AS.interacted = true;
+  if(b.disabled) return; b.disabled = true; b.textContent = "…";
+  const [id, t] = b.dataset.stake.split("|");
+  const d = sDoses().find(x => x.medId === id && x.t === Number(t));
+  if(d) sTake([d]); else b.disabled = false;
+});
 document.querySelectorAll("#simple [data-s]").forEach(b => b.onclick = () => {
   AS.interacted = true; const k = b.dataset.s;
   if(!SM.pid) return;
