@@ -1,20 +1,5 @@
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Pastillero</title>
-<meta name="theme-color" content="#0E7A62">
-<meta name="robots" content="noindex,nofollow">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="mobile-web-app-capable" content="yes">
-<script>try{if(localStorage.getItem("pf-simple")===null)localStorage.setItem("pf-simple","true")}catch(e){}</script>
-</head>
-<body>
-
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Pastillero Familiar</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -1807,5 +1792,306 @@ boot();
 })();
 </script>
 
-</body>
-</html>
+
+<style>
+#grouk-doctor{position:fixed;right:max(12px,env(safe-area-inset-right,12px));bottom:max(12px,env(safe-area-inset-bottom,12px));z-index:9999;display:flex;flex-direction:column;align-items:flex-end;gap:10px;font-family:var(--f-body)}
+#grouk-bubble{max-width:min(360px,84vw);background:var(--surface);border:1px solid var(--line);border-radius:18px 18px 4px 18px;padding:12px 14px;box-shadow:0 8px 32px rgba(0,0,0,.18);display:none}
+#grouk-bubble.show{display:block;animation:pop .25s ease}
+#grouk-bubble b{font-family:var(--f-display)}
+#grouk-bubble p{margin:6px 0 0}
+#grouk-controls{display:flex;gap:8px;align-items:center}
+#grouk-avatar{width:56px;height:56px;border-radius:50%;background:var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-size:28px;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.2);border:2px solid var(--surface);transition:transform .2s}
+#grouk-avatar.hablando{animation:habla 0.6s infinite;transform:scale(1.05)}
+#grouk-avatar.escuchando{animation:escucha 1s infinite;background:var(--late)}
+#grouk-mic{width:44px;height:44px;border-radius:50%;border:0;background:var(--ink);color:var(--surface);display:grid;place-items:center;cursor:pointer}
+#grouk-mic.on{background:var(--late);color:#fff}
+@keyframes habla{0%,100%{transform:scale(1.05)}50%{transform:scale(1.12)}}
+@keyframes escucha{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+@keyframes pop{from{transform:translateY(8px) scale(.96);opacity:0}to{transform:none;opacity:1}}
+#grouk-input{position:fixed;left:0;right:0;bottom:0;z-index:9998;background:var(--surface);border-top:1px solid var(--line);padding:10px max(12px,env(safe-area-inset-left,12px)) max(12px,env(safe-area-inset-bottom,12px)) max(12px,env(safe-area-inset-right,12px));display:none;gap:8px}
+#grouk-input.show{display:flex}
+#grouk-input input{flex:1;border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg)}
+</style>
+<div id="grouk-doctor" aria-live="polite">
+  <div id="grouk-bubble"><b id="grouk-title">Doctor Grouk</b><p id="grouk-text">Hola, soy tu doctor. Puedo recordarte tomas y leer tus signos.</p></div>
+  <div id="grouk-controls">
+    <button id="grouk-mic" title="Hablar con el doctor">🎙️</button>
+    <div id="grouk-avatar" title="Toca para que hable">🩺</div>
+  </div>
+</div>
+<div id="grouk-input"><input id="grouk-q" placeholder="Pregúntale al doctor: ¿qué toca hoy?"><button class="btn primary" id="grouk-send">Enviar</button><button class="btn ghost" id="grouk-close">Cerrar</button></div>
+<script>
+(function(){
+  const $ = s=>document.getElementById(s);
+  const bubble = $('grouk-bubble'), bText = $('grouk-text'), bTitle = $('grouk-title');
+  const avatar = $('grouk-avatar'), micBtn = $('grouk-mic');
+  const inputBar = $('grouk-input'), qInput = $('grouk-q');
+  let speaking = false;
+  let lastReminder = '';
+
+  function showBubble(title, text){
+    bTitle.textContent = title;
+    bText.textContent = text;
+    bubble.classList.add('show');
+    clearTimeout(bubble._t);
+    bubble._t = setTimeout(()=>bubble.classList.remove('show'), 6000);
+  }
+
+  function hablar(texto){
+    if(!texto) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(texto);
+    u.lang = 'es-MX';
+    u.rate = 0.98;
+    // elige voz en español si existe
+    const voices = speechSynthesis.getVoices();
+    const v = voices.find(x=>/es-MX|es-US|Spanish.*Mexico/i.test(x.name)) || voices.find(x=>x.lang.startsWith('es')) || null;
+    if(v) u.voice = v;
+    u.onstart = ()=>{ avatar.classList.add('hablando'); speaking=true; };
+    u.onend = ()=>{ avatar.classList.remove('hablando'); speaking=false; };
+    u.onerror = ()=>{ avatar.classList.remove('hablando'); speaking=false; };
+    speechSynthesis.speak(u);
+    showBubble('Doctor Grouk', texto);
+  }
+
+  // Asegura voces cargadas
+  speechSynthesis.onvoiceschanged = ()=>speechSynthesis.getVoices();
+
+  function obtenerTomasHoy(){
+    // Lee del DOM lo que el pastillero ya renderizó
+    const items = [];
+    document.querySelectorAll('#v-hoy .slot, #v-asistente .slot, .slot').forEach(slot=>{
+      const t = slot.textContent.replace(/\s+/g,' ').trim();
+      if(t) items.push(t.slice(0,120));
+    });
+    // También busca alertas
+    const alertas = [];
+    document.querySelectorAll('.alert.late, .alert.due').forEach(a=>{
+      alertas.push(a.innerText.slice(0,200));
+    });
+    return {items, alertas};
+  }
+
+  function responderPregunta(q){
+    q = q.toLowerCase();
+    const {items, alertas} = obtenerTomasHoy();
+    if(q.includes('que toca') || q.includes('qué toca') || q.includes('tomas') || q.includes('pastilla') || q.includes('medicina')){
+      if(alertas.length){
+        hablar('Atención: ' + alertas[0] + '. ' + (items[0] ? 'También tienes: ' + items[0] : ''));
+      } else if(items.length){
+        hablar('Hoy tienes programado: ' + items.slice(0,3).join('. ') + '. Revisa la sección Tomas de hoy para marcarlas.');
+      } else {
+        hablar('No veo tomas pendientes en este momento. Si ya las tomaste, excelente trabajo.');
+      }
+      return;
+    }
+    if(q.includes('presion') || q.includes('presión') || q.includes('glucosa') || q.includes('signos')){
+      hablar('Puedo ayudarte con tus signos. Ve a la sección Registro y dime qué valor quieres anotar, o pregúntame por tu promedio de esta semana.');
+      return;
+    }
+    if(q.includes('cita')){
+      const citaEl = document.querySelector('#v-citas, #citas');
+      hablar('Tus próximas citas están en la pestaña Citas médicas. ¿Quieres que te recuerde la más cercana?');
+      return;
+    }
+    if(q.includes('hola') || q.includes('buenas')){
+      hablar('Hola, soy el Doctor Grouk, tu asistente familiar. Estoy aquí para recordarte tus medicinas y ayudarte con tus signos. ¿Qué necesitas?');
+      return;
+    }
+    // Fallback con IA si hay backend, si no respuesta local
+    hablar('Entendido: ' + q + '. Por ahora te respondo con lo que veo en tu pastillero. Si conectas una API de IA como Grok, puedo darte respuestas más completas.');
+  }
+
+  // Escuchar con Web Speech API
+  let recognition = null;
+  function escuchar(){
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if(!SR){ inputBar.classList.add('show'); qInput.focus(); hablar('Tu navegador no soporta voz, escribe tu pregunta abajo.'); return; }
+    if(!recognition){
+      recognition = new SR();
+      recognition.lang = 'es-MX';
+      recognition.interimResults = false;
+      recognition.onstart = ()=>{ micBtn.classList.add('on'); avatar.classList.add('escuchando'); showBubble('Escuchando...','Te escucho, habla ahora'); };
+      recognition.onend = ()=>{ micBtn.classList.remove('on'); avatar.classList.remove('escuchando'); };
+      recognition.onresult = (e)=>{
+        const texto = e.results[0][0].transcript;
+        qInput.value = texto;
+        responderPregunta(texto);
+      };
+      recognition.onerror = ()=>{ micBtn.classList.remove('on'); avatar.classList.remove('escuchando'); inputBar.classList.add('show'); };
+    }
+    try{ recognition.start(); }catch{}
+  }
+
+  // Eventos
+  avatar.onclick = ()=>{
+    if(speaking){ speechSynthesis.cancel(); avatar.classList.remove('hablando'); return; }
+    const {alertas, items} = obtenerTomasHoy();
+    if(alertas.length) hablar(alertas[0]);
+    else if(items.length) hablar('Tienes ' + items.length + ' tomas hoy. ' + items[0]);
+    else hablar('Todo al día por ahora. Soy tu Doctor Grouk, dime ¿en qué te ayudo?');
+  };
+  micBtn.onclick = escuchar;
+  $('grouk-send').onclick = ()=>{
+    const q = qInput.value.trim();
+    if(q){ responderPregunta(q); qInput.value=''; inputBar.classList.remove('show'); }
+  };
+  $('grouk-close').onclick = ()=> inputBar.classList.remove('show');
+  qInput.addEventListener('keydown', e=>{ if(e.key==='Enter') $('grouk-send').click(); });
+
+  // Recordatorio automático: habla si hay alertas de atraso (cada vez que render cambia)
+  let lastAlertText = '';
+  function checkAlertasSonoras(){
+    const late = document.querySelector('.alert.late, .alert.due');
+    if(late){
+      const txt = late.innerText.slice(0,200);
+      if(txt && txt !== lastAlertText){
+        lastAlertText = txt;
+        // solo habla si la página lleva abierta más de 3s para no molestar al inicio
+        if(document.visibilityState === 'visible'){
+          // respeta si el usuario no quiere sonido? aquí hablamos suave
+          setTimeout(()=>hablar('Recordatorio: ' + txt), 1200);
+        }
+      }
+    }
+  }
+  // Observa cambios en el DOM del pastillero
+  const obs = new MutationObserver(checkAlertasSonoras);
+  obs.observe(document.body, {childList:true, subtree:true});
+  setInterval(checkAlertasSonoras, 30000);
+
+  // Mensaje inicial
+  window.addEventListener('load', ()=>{
+    setTimeout(()=>{ showBubble('Doctor Grouk','Toca 🩺 para que hable, o 🎙️ para preguntarle'); }, 1500);
+  });
+
+  // Exponer API para que puedas conectar Grok real
+  window.GROUK = {
+    hablar,
+    escuchar,
+    preguntar: responderPregunta,
+    // Para conectar tu API de IA:
+    async preguntarConIA(pregunta, apiUrl='/api/chat'){
+      try{
+        const r = await fetch(apiUrl, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({messages:[{system:'Eres Doctor Grouk, asistente del Pastillero Familiar. Responde en español, breve, cálido, y útil. Si hay tomas pendientes, menciónalas.', user: pregunta}]})
+        });
+        const data = await r.json();
+        const texto = data.choices?.[0]?.message?.content || data.respuesta || 'No pude obtener respuesta de la IA';
+        hablar(texto);
+        return texto;
+      }catch(e){
+        hablar('No pude conectar con la IA, pero puedo ayudarte con lo que veo en tu pastillero.');
+      }
+    }
+  };
+})();
+</script>
+
+
+<style>
+#grouk-model-status{font-size:.8rem;color:var(--muted);margin-top:6px;display:flex;gap:8px;align-items:center}
+#grouk-progress{height:6px;background:var(--sunk);border-radius:99px;overflow:hidden;flex:1;max-width:160px}
+#grouk-progress i{display:block;height:100%;background:var(--accent);width:0%;transition:width .3s}
+</style>
+<script type="module">
+import { CreateMLCEngine } from "https://esm.run/@mlc-ai/web-llm@0.2.79";
+
+let engine = null;
+let engineLoading = false;
+const bubble = document.getElementById('grouk-bubble');
+const bTitle = document.getElementById('grouk-title');
+const bText = document.getElementById('grouk-text');
+const avatar = document.getElementById('grouk-avatar');
+
+function setStatus(title, text, progress=0){
+  bTitle.textContent = title;
+  bText.innerHTML = text + `<div id="grouk-model-status"><div id="grouk-progress"><i id="grouk-progress-i" style="width:${progress}%"></i></div><span>${progress}%</span></div>`;
+  bubble.classList.add('show');
+  const prog = document.getElementById('grouk-progress-i');
+  if(prog) prog.style.width = progress + '%';
+}
+
+async function initLocalIA(){
+  if(engine || engineLoading) return engine;
+  engineLoading = true;
+  try{
+    setStatus('Descargando cerebro...', 'Primera vez baja ~800MB y luego queda offline gratis. Puede tardar 1-2 min.', 0);
+    // Modelo pequeño, rápido y en español decente
+    const model = "Llama-3.2-1B-Instruct-q4f32_1-MLC";
+    // Alternativa aún más ligera si tu celular es viejito: "Phi-3.5-mini-4k-instruct-q4f32_1-MLC"
+    engine = await CreateMLCEngine(model, {
+      initProgressCallback: (p)=>{
+        const pct = Math.round((p.progress||0)*100);
+        setStatus('Instalando IA gratis...', p.text || 'Descargando...', pct);
+      }
+    });
+    setStatus('Doctor Grouk listo', 'IA gratis instalada. Ya puedo responder cosas complejas sin internet ni pagos.', 100);
+    setTimeout(()=>window.GROUK.hablar('Listo, ya tengo cerebro local gratis. Pregúntame lo que quieras sobre tus medicinas.'), 800);
+    return engine;
+  }catch(e){
+    console.error(e);
+    setStatus('Error IA local', 'No pude cargar la IA gratis. Sigo funcionando con respuestas locales sin costo. ' + e.message, 0);
+    engine = null;
+    return null;
+  }finally{
+    engineLoading = false;
+  }
+}
+
+// Reemplaza la función de IA del script anterior
+window.addEventListener('load', ()=>{
+  // Expón init
+  window.GROUK.initIA = initLocalIA;
+  window.GROUK.preguntarConIA = async (pregunta)=>{
+    const eng = await initLocalIA();
+    if(!eng){
+      window.GROUK.hablar('No pude cargar la IA gratis, pero puedo ayudarte con tu pastillero.');
+      return;
+    }
+    try{
+      // Contexto real del pastillero
+      const tomasTexto = Array.from(document.querySelectorAll('.alert, .slot')).slice(0,8).map(el=>el.innerText.slice(0,120)).join('\n');
+      const signosTexto = document.getElementById('bpChart') ? 'Hay gráfica de presión' : 'Sin datos de presión';
+      
+      const messages = [
+        {role:"system", content: `Eres Doctor Grouk, asistente del Pastillero Familiar. Hablas español mexicano, cálido, breve (máx 2 frases). NO das diagnósticos, solo recuerdas tomas y orientas. 
+Contexto actual del pastillero:
+${tomasTexto}
+${signosTexto}
+Si preguntan por tomas, responde con lo que ves. Si es salud general, orienta sin recetar.`},
+        {role:"user", content: pregunta}
+      ];
+      
+      setStatus('Pensando...', 'Usando IA local gratis...', 100);
+      const reply = await eng.chat.completions.create({messages, temperature:0.7, max_tokens:180});
+      const texto = reply.choices[0].message.content;
+      window.GROUK.hablar(texto);
+      return texto;
+    }catch(err){
+      console.error(err);
+      window.GROUK.hablar('Se trabó mi cerebro local, pero sigo viendo tus tomas. ¿Qué pastilla necesitas?');
+    }
+  };
+  
+  // Auto-inicia la descarga cuando el usuario toca el doctor por primera vez
+  const origAvatarClick = avatar.onclick;
+  avatar.onclick = async ()=>{
+    if(!engine && !engineLoading){
+      setStatus('¿Activas mi cerebro gratis?', 'Toca de nuevo para descargar IA local (800MB, una sola vez, gratis para siempre). Si no, sigo funcionando sin IA.', 0);
+      // segundo click inicia
+      avatar.onclick = async ()=>{
+        await initLocalIA();
+        avatar.onclick = origAvatarClick;
+        if(origAvatarClick) origAvatarClick();
+      };
+      return;
+    }
+    if(origAvatarClick) origAvatarClick();
+  };
+});
+</script>
+
+</body></html>
