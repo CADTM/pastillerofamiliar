@@ -439,7 +439,29 @@ footer b{font-family:var(--f-mono);color:var(--ink)}
     <div class="row spread"><h2>Signos y notas</h2>
       <div class="row"><button class="btn ghost" id="dlCsv">Descargar historial (CSV)</button><button class="btn primary" id="addReg">+ Nuevo registro</button></div>
     </div>
-    <div class="card" id="sumCard"><div class="row spread"><h3>Resumen para el doctor · últimos 7 días</h3><div class="row" style="gap:8px"><button class="btn small ghost" id="sumCopy">Copiar texto</button><a class="btn small ghost" id="sumWa" target="_blank" rel="noopener" style="text-decoration:none">Enviar por WhatsApp</a></div></div><div id="sumBody"></div><textarea id="sumText" readonly hidden style="width:100%;min-height:180px;font-family:var(--f-mono);font-size:.85rem"></textarea></div>
+    <div class="card" id="sumCard"><div class="row spread"><h3>Resumen para el doctor · últimos 7 días</h3><div class="row" style="gap:8px"><button class="btn small ghost" id="sumCopy">Copiar texto</button><a class="btn small ghost" id="sumWa" target="_blank" rel="noopener" style="text-decoration:none">Enviar por WhatsApp</a></div></div>
+<div id="wa-config" style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:.9rem">
+  <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="wa-modo-grupo"> Enviar "mis pastillas de hoy" a un <b>grupo de WhatsApp</b></label>
+  <small class="muted">Si lo marcas, al enviar te dejará elegir el grupo. Si no, va al número del paciente.</small>
+</div>
+<script>
+(function(){
+  const chk = document.getElementById('wa-modo-grupo');
+  const saved = localStorage.getItem('wa_modo');
+  if(chk){
+    chk.checked = saved === 'grupo';
+    chk.addEventListener('change', ()=>{
+      localStorage.setItem('wa_modo', chk.checked ? 'grupo' : 'contacto');
+      // refresca vista
+      try{ render(); }catch(e){}
+      const mini = document.getElementById('voz-google-mini');
+      if(mini){ mini.textContent = chk.checked ? '✅ Enviará a grupo de WhatsApp' : '✅ Enviará al número del paciente'; mini.classList.add('show'); setTimeout(()=>mini.classList.remove('show'),3000); }
+    });
+  }
+})();
+</script>
+
+<div id="sumBody"></div><textarea id="sumText" readonly hidden style="width:100%;min-height:180px;font-family:var(--f-mono);font-size:.85rem"></textarea></div>
     <div class="card" id="bpCard"><div class="row spread"><h3>Presión arterial</h3><span class="hint">Línea punteada: 140/90 mmHg</span></div><div id="bpChart"></div></div>
     <div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Paciente</th><th>Presión</th><th>Glucosa</th><th>Temp.</th><th>Oxígeno</th><th>Peso</th><th>Notas</th><th></th></tr></thead><tbody id="regBody"></tbody></table></div>
     <h2>Historial de tomas</h2>
@@ -1593,7 +1615,7 @@ function renderSimple(){
   const quien = String(p.contacto||"").replace(/[\d\s()+-]{7,}/, "").trim() || "mi familia";
   const tel10 = tel.replace(/^\+?52/, "").slice(-10), waNum = tel10.length === 10 ? "52" + tel10 : tel.replace(/\D/g, "");
   $("#sCalls").innerHTML = (tel ? `<a class="s-btn call" href="tel:${esc(tel)}"><span class="s-ico">📞</span>Llamar a ${esc(quien)}<small>${esc(tel10.replace(/^(\d{3})(\d{3})(\d{4})$/,"$1 $2 $3"))}</small></a>
-    <a class="s-btn wa" href="https://wa.me/${esc(waNum)}?text=${encodeURIComponent(sReportText())}" target="_blank" rel="noopener"><span class="s-ico">💬</span>Avisar por WhatsApp<small>mis pastillas de hoy</small></a>` : "")
+    <a class="s-btn wa" href="${(function(){ try{ const modo = localStorage.getItem('wa_modo') || ''; const num = (waNum||'').trim(); if(modo==='grupo' || !num) return `https://wa.me/?text=${encodeURIComponent(sReportText())}`; return `https://wa.me/${esc(num)}?text=${encodeURIComponent(sReportText())}`; }catch(e){ return `https://wa.me/?text=${encodeURIComponent(sReportText())}`; } })()}" target="_blank" rel="noopener"><span class="s-ico">💬</span>Avisar por WhatsApp<small>mis pastillas de hoy</small></a>` : "")
     + `<a class="s-btn sos wide" href="tel:911"><span class="s-ico">🚑</span>Emergencia · 911</a>`;
   const cf = cfg(), famKey = (cf.mensaje||"") + (cf.fotoFam||"").length;
   if(famKey !== SM.famKey){ SM.famKey = famKey;
