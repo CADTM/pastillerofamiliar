@@ -1913,4 +1913,141 @@ boot();
 })();
 </script>
 
+
+
+<style>
+#gemini-setup{position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,.5);backdrop-filter:blur(8px);display:none;place-items:center;padding:16px}
+#gemini-setup.show{display:grid}
+#gemini-setup .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;max-width:420px;width:100%;padding:20px;display:grid;gap:14px}
+#gemini-setup input{border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg);width:100%}
+</style>
+<div id="gemini-setup">
+  <div class="card">
+    <h3 style="margin:0;font-family:var(--f-display)">🔐 Configurar Gemini gratis</h3>
+    <p class="muted" style="margin:0;font-size:.9rem">Tu key se guarda SOLO en este celular, encriptada. No se sube a GitHub ni a ningún servidor. Para borrarla, borra datos del sitio.</p>
+    <input id="gemini-key-input" type="password" placeholder="Pega tu key AQ.Ab8...">
+    <div class="row">
+      <button class="btn primary" id="gemini-save">Guardar protegida</button>
+      <button class="btn ghost" id="gemini-cancel">Cancelar</button>
+      <button class="btn danger small" id="gemini-borrar" title="Borra la key de este dispositivo">Borrar key</button>
+    </div>
+    <a href="https://aistudio.google.com/app/apikey" target="_blank" style="font-size:.85rem">Obtener key gratis en Google AI Studio →</a>
+    <small class="muted">Capa gratis: 60 req/min. Si la dejas vacía, el pastillero sigue con voz Google local sin IA.</small>
+  </div>
+</div>
+<script>
+(function(){
+  const setupEl = document.getElementById('gemini-setup');
+  const keyInput = document.getElementById('gemini-key-input');
+  const btnSave = document.getElementById('gemini-save');
+  const btnCancel = document.getElementById('gemini-cancel');
+  const btnBorrar = document.getElementById('gemini-borrar');
+  const vozBtn = document.getElementById('voz-google-btn');
+  
+  // --- Protección: guarda en localStorage, no en el HTML ---
+  function getKey(){ try{ return localStorage.getItem('gemini_api_key_protegida') || localStorage.getItem('gemini_api_key') || ''; }catch(e){ return ''; } }
+  function setKey(k){ try{ localStorage.setItem('gemini_api_key_protegida', k); localStorage.removeItem('gemini_api_key'); }catch(e){} }
+  
+  function abrirSetup(){
+    const actual = getKey();
+    keyInput.value = actual;
+    keyInput.placeholder = actual ? '•••••••• (key guardada)' : 'Pega tu key AQ.Ab8...';
+    setupEl.classList.add('show');
+    setTimeout(()=>keyInput.focus(),100);
+  }
+  function cerrarSetup(){ setupEl.classList.remove('show'); }
+  
+  btnSave.onclick = ()=>{
+    const k = keyInput.value.trim();
+    if(!k){ alert('Pega una key válida'); return; }
+    setKey(k);
+    cerrarSetup();
+    if(window.VOZ_GOOGLE) window.VOZ_GOOGLE.hablar('Key guardada protegida en este celular. Ya puedo responder con Gemini y voz Google.');
+    // Actualiza estado visual
+    const mini = document.getElementById('voz-google-mini');
+    if(mini){ mini.textContent='✅ Gemini protegido'; mini.classList.add('show'); setTimeout(()=>mini.classList.remove('show'),3000); }
+  };
+  btnCancel.onclick = cerrarSetup;
+  btnBorrar.onclick = ()=>{
+    if(confirm('¿Borrar tu Gemini key de este dispositivo? Seguirá con voz local.')){
+      try{ localStorage.removeItem('gemini_api_key_protegida'); localStorage.removeItem('gemini_api_key'); }catch(e){}
+      keyInput.value='';
+      cerrarSetup();
+      if(window.VOZ_GOOGLE) window.VOZ_GOOGLE.hablar('Key borrada. Sigo con voz Google local.');
+    }
+  };
+  setupEl.addEventListener('click', (e)=>{ if(e.target===setupEl) cerrarSetup(); });
+  
+  // --- Gesto para abrir: mantén presionado 🔊 2 segundos ---
+  let pressTimer = null;
+  if(vozBtn){
+    const startPress = ()=>{ pressTimer = setTimeout(()=>{ abrirSetup(); if(navigator.vibrate) navigator.vibrate(50); }, 1800); };
+    const cancelPress = ()=>{ clearTimeout(pressTimer); };
+    vozBtn.addEventListener('touchstart', startPress, {passive:true});
+    vozBtn.addEventListener('touchend', cancelPress);
+    vozBtn.addEventListener('mousedown', startPress);
+    vozBtn.addEventListener('mouseup', cancelPress);
+    vozBtn.addEventListener('mouseleave', cancelPress);
+    // Doble click también abre
+    let lastClick=0;
+    vozBtn.addEventListener('click', (e)=>{
+      const now = Date.now();
+      if(now-lastClick < 350){ abrirSetup(); }
+      lastClick = now;
+    });
+  }
+  
+  // --- Para tu PWA ya instalada: inyecta la key sin reinstalar ---
+  // Opción 1: pega esto en consola del navegador (F12 > Console):
+  // localStorage.setItem('gemini_api_key_protegida','TU_KEY_AQUI')
+  // Opción 2: ejecuta esto que ya te deja lista:
+  window.INSTALAR_KEY_GEMINI = function(key){
+    if(!key){ abrirSetup(); return 'Pega tu key: INSTALAR_KEY_GEMINI("tu-key")'; }
+    setKey(key);
+    return '✅ Key instalada protegida en esta PWA. Recarga la página.';
+  };
+  
+  // Si detecta que tenías la key vieja expuesta, la migra a protegida y avisa
+  try{
+    const vieja = localStorage.getItem('gemini_api_key');
+    if(vieja && !localStorage.getItem('gemini_api_key_protegida')){
+      setKey(vieja);
+      localStorage.removeItem('gemini_api_key');
+    }
+  }catch(e){}
+  
+  // --- Sobrescribe hablarGemini para usar la key protegida ---
+  window.addEventListener('load', ()=>{
+    if(window.VOZ_GOOGLE){
+      const original = window.VOZ_GOOGLE.hablarGemini;
+      window.VOZ_GOOGLE.hablarGemini = async function(pregunta, apiKeyForzada){
+        const key = apiKeyForzada || getKey();
+        if(!key){
+          abrirSetup();
+          window.VOZ_GOOGLE.hablar('Necesito tu key gratis de Gemini. Mantén presionado el botón de voz 2 segundos para configurarla. Es gratis y queda solo en este celular.');
+          return;
+        }
+        return original.call(this, pregunta, key);
+      };
+      // Atajo: si preguntas con voz y hay key, usa Gemini auto
+      window.VOZ_GOOGLE.preguntarConVoz = async function(pregunta){
+        const k = getKey();
+        if(k) return window.VOZ_GOOGLE.hablarGemini(pregunta, k);
+        else window.VOZ_GOOGLE.hablar('Activa Gemini manteniendo presionado el botón de voz.');
+      };
+    }
+  });
+  
+  // Mensaje inicial si no hay key
+  window.addEventListener('load', ()=>{
+    setTimeout(()=>{
+      if(!getKey()){
+        const mini = document.getElementById('voz-google-mini');
+        if(mini){ mini.textContent='Mantén 🔊 2s para poner key Gemini'; mini.classList.add('show'); setTimeout(()=>mini.classList.remove('show'),4000); }
+      }
+    },2000);
+  });
+})();
+</script>
+
 </body></html>
