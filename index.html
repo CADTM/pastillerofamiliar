@@ -440,27 +440,89 @@ footer b{font-family:var(--f-mono);color:var(--ink)}
       <div class="row"><button class="btn ghost" id="dlCsv">Descargar historial (CSV)</button><button class="btn primary" id="addReg">+ Nuevo registro</button></div>
     </div>
     <div class="card" id="sumCard"><div class="row spread"><h3>Resumen para el doctor · últimos 7 días</h3><div class="row" style="gap:8px"><button class="btn small ghost" id="sumCopy">Copiar texto</button><a class="btn small ghost" id="sumWa" target="_blank" rel="noopener" style="text-decoration:none">Enviar por WhatsApp</a></div></div>
-<div id="wa-config" style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:.9rem">
-  <label style="display:flex;gap:6px;align-items:center;cursor:pointer"><input type="checkbox" id="wa-modo-grupo"> Enviar "mis pastillas de hoy" a un <b>grupo de WhatsApp</b></label>
-  <small class="muted">Si lo marcas, al enviar te dejará elegir el grupo. Si no, va al número del paciente.</small>
+
+<div id="wa-config" style="margin-top:12px;background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:10px">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <label style="display:flex;gap:8px;align-items:center;cursor:pointer;font-weight:700"><input type="checkbox" id="wa-modo-grupo"> Enviar a grupo de WhatsApp</label>
+    <span class="muted" style="font-size:.85rem">Actívalo para elegir grupo al enviar</span>
+  </div>
+  <div id="wa-grupo-row" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+    <label class="lbl" style="margin:0">Nombre de tu grupo favorito:</label>
+    <input id="wa-grupo-nombre" type="text" placeholder="Ej: Familia Mamá, Cuidados" style="border:1.5px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface);min-width:200px;flex:1">
+    <button class="btn small primary" id="wa-grupo-guardar">Guardar grupo</button>
+  </div>
+  <small id="wa-grupo-info" class="muted" style="display:none">Se guarda solo en este celular. El mensaje incluirá: "Para grupo [nombre]" para recordarte cuál elegir.</small>
 </div>
 <script>
 (function(){
   const chk = document.getElementById('wa-modo-grupo');
-  const saved = localStorage.getItem('wa_modo');
+  const row = document.getElementById('wa-grupo-row');
+  const info = document.getElementById('wa-grupo-info');
+  const input = document.getElementById('wa-grupo-nombre');
+  const btnGuardar = document.getElementById('wa-grupo-guardar');
+  
+  function getModo(){ return localStorage.getItem('wa_modo') || 'contacto'; }
+  function getGrupo(){ return localStorage.getItem('wa_grupo_nombre') || ''; }
+  
+  function refreshUI(){
+    const modo = getModo();
+    const grupo = getGrupo();
+    if(chk) chk.checked = modo === 'grupo';
+    if(row) row.style.display = modo === 'grupo' ? 'flex' : 'none';
+    if(info) info.style.display = modo === 'grupo' ? 'block' : 'none';
+    if(input && grupo) input.value = grupo;
+    if(info && grupo) info.textContent = `Grupo favorito guardado: "${grupo}". Al enviar WhatsApp, el mensaje empezará con "Para ${grupo}:" para que lo identifiques.`;
+  }
+  
   if(chk){
-    chk.checked = saved === 'grupo';
     chk.addEventListener('change', ()=>{
       localStorage.setItem('wa_modo', chk.checked ? 'grupo' : 'contacto');
-      // refresca vista
+      refreshUI();
       try{ render(); }catch(e){}
       const mini = document.getElementById('voz-google-mini');
-      if(mini){ mini.textContent = chk.checked ? '✅ Enviará a grupo de WhatsApp' : '✅ Enviará al número del paciente'; mini.classList.add('show'); setTimeout(()=>mini.classList.remove('show'),3000); }
+      if(mini){ mini.textContent = chk.checked ? '✅ Enviará a grupo: ' + (getGrupo() || 'elegir al enviar') : '✅ Enviará al número del paciente'; mini.classList.add('show'); setTimeout(()=>mini.classList.remove('show'),3000); }
     });
   }
+  if(btnGuardar){
+    btnGuardar.onclick = ()=>{
+      const nombre = input.value.trim();
+      if(!nombre){ alert('Escribe el nombre de tu grupo, ej: Familia'); return; }
+      localStorage.setItem('wa_grupo_nombre', nombre);
+      refreshUI();
+      if(window.VOZ_GOOGLE) window.VOZ_GOOGLE.hablar(`Grupo ${nombre} guardado como favorito.`);
+    };
+  }
+  if(input){
+    input.addEventListener('keydown', (e)=>{ if(e.key==='Enter') btnGuardar.click(); });
+  }
+  
+  // Modifica el texto del reporte para incluir el nombre del grupo si está en modo grupo
+  const originalSReport = window.sReportText;
+  // Interceptamos la generación del texto en el próximo render parcheando globalmente
+  window.addEventListener('load', ()=>{
+    // Busca la función sReportText si existe global
+    if(typeof sReportText === 'function'){
+      const orig = sReportText;
+      window.sReportText = function(){
+        let txt = orig.apply(this, arguments);
+        try{
+          const modo = localStorage.getItem('wa_modo');
+          const grupo = localStorage.getItem('wa_grupo_nombre');
+          if(modo==='grupo' && grupo){
+            // Prepende referencia al grupo
+            if(!txt.startsWith('Para grupo')) txt = `Para grupo ${grupo}:
+
+` + txt;
+          }
+        }catch(e){}
+        return txt;
+      };
+    }
+  });
+  
+  refreshUI();
 })();
 </script>
-
 <div id="sumBody"></div><textarea id="sumText" readonly hidden style="width:100%;min-height:180px;font-family:var(--f-mono);font-size:.85rem"></textarea></div>
     <div class="card" id="bpCard"><div class="row spread"><h3>Presión arterial</h3><span class="hint">Línea punteada: 140/90 mmHg</span></div><div id="bpChart"></div></div>
     <div class="tablewrap"><table><thead><tr><th>Fecha</th><th>Paciente</th><th>Presión</th><th>Glucosa</th><th>Temp.</th><th>Oxígeno</th><th>Peso</th><th>Notas</th><th></th></tr></thead><tbody id="regBody"></tbody></table></div>
