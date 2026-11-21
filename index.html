@@ -1,5 +1,9 @@
 <!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
 <title>Pastillero Familiar</title>
+<meta name="theme-color" content="#0E7A62">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -569,6 +573,7 @@ footer b{font-family:var(--f-mono);color:var(--ink)}
     <button class="s-btn" data-s="presion"><span class="s-ico">❤️</span>Anotar mi presión</button>
   </div>
   <div id="sPanel"></div>
+  <div id="sNat"></div>
   <div class="s-grid" id="sCalls"></div>
   <button class="s-exit" id="sExit" type="button">Salir del modo sencillo</button>
   <div style="text-align:center;font-family:var(--f-mono);font-size:.85rem;color:var(--muted)">@cybercadtm · <span class="appver"></span></div>
@@ -790,7 +795,7 @@ function render(){
   $("#bCitas").hidden = !soon.length; $("#bCitas").textContent = soon.length;
   checkAlarms(doses);
   renderHoy(doses, late, due, fut, soon, day, tomorrow, nowMin);
-  renderMeds(); renderCitas(citas, fut, day); renderRegistro(); renderSummary(); renderBP(); renderPacientes(); backupInfo(); renderAsistente(); renderSimple();
+  renderMeds(); renderCitas(citas, fut, day); renderRegistro(); renderSummary(); renderBP(); renderPacientes(); backupInfo(); renderAsistente(); renderSimple(); queueNative();
   document.querySelectorAll("[data-w]").forEach(b => b.disabled = !canWrite);
 }
 
@@ -1132,10 +1137,10 @@ async function syncRemote(){
   }catch{}
 }
 document.addEventListener("visibilitychange", () => { if(!document.hidden) syncRemote(); });
-const APP_VER = "2 nov 2026 (b)";
+const APP_VER = "21 nov 2026";
 document.querySelectorAll(".appver").forEach(e => e.textContent = "versión " + APP_VER);
 if(!window.claude){
-  if("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  if("serviceWorker" in navigator && location.protocol === "https:" && !window.Capacitor?.isNativePlatform?.()) navigator.serviceWorker.register("sw.js").catch(() => {});
   try { navigator.storage?.persist?.(); } catch {}
 }
 const ID_OK = /^(?!\.\.?$)[A-Za-z0-9_\-.~:@+]{1,200}$/;
@@ -1421,7 +1426,14 @@ const pickVoice = () => { const vs = esVoices(); return vs.find(v => v.voiceURI 
 const speakable = t => String(t).replace(/[*_#`>]/g, "").replace(/\bmg\b/gi, " miligramos").replace(/\s\/\s/g, " con ").replace(/·/g, ",").replace(/°C/g, " grados").replace(/\s+/g, " ").trim();
 let speakSeq = 0;
 function speak(text){
-  if(!tts || !voiceOn || !text) return;
+  if(!voiceOn || !text) return;
+  if(NAT.tts){
+    const my = ++speakSeq; setState("speaking");
+    NAT.tts.stop().catch(() => {}).then(() => NAT.tts.speak({ text: speakable(text), lang: "es-MX", rate: voiceRate, pitch: 1, volume: 1, category: "playback" }))
+      .catch(() => {}).finally(() => { if(my === speakSeq) setState("idle"); });
+    return;
+  }
+  if(!tts) return;
   const my = ++speakSeq;
   try { tts.cancel(); } catch {}
   const parts = speakable(text).split(/(?<=[.!?;])\s+/).filter(Boolean), v = pickVoice();
@@ -1433,7 +1445,8 @@ function speak(text){
     tts.speak(u);
   });
 }
-function stopSpeak(){ speakSeq++; try { tts?.cancel(); } catch {} setState("idle"); }
+function stopSpeak(){ speakSeq++; try { tts?.cancel(); } catch {} try { NAT.tts?.stop().catch(() => {}); } catch {} setState("idle"); }
+window.PF_SPEAK = t => speak(t);
 if(tts){ try { tts.getVoices(); tts.onvoiceschanged = () => {}; } catch {} }
 
 /* Conversación */
@@ -1448,7 +1461,7 @@ function actionsFor(){
     for(const d of due) await markDose(d.medId, d.t, "tomada");
     respond(`Listo, anoté como tomada ${joinY(due.map(d => d.med.nombre))}. ${nextText(snapshot()).replace(/^Ahorita[^.]*\.\s*/,"")}`);
   }});
-  if(tts) acts.push({ label: "Escuchar", fn: () => speak(AS.lastText) });
+  if(tts || NAT.tts) acts.push({ label: "Escuchar", fn: () => speak(AS.lastText) });
   return acts;
 }
 function setActs(acts){
@@ -1857,6 +1870,115 @@ function renderBP(){
   </svg><div class="row" style="gap:16px;font-size:.9rem"><span><span class="pdot" style="background:var(--late)"></span>Alta (sistólica)</span><span><span class="pdot" style="background:var(--cita)"></span>Baja (diastólica)</span></div>`;
 }
 
+/* ---------- App de Android: avisos con el teléfono en reposo ---------- */
+const NAT = { on: false, LN: null, App: null, tts: null, t: null, sig: "", count: 0, next: null, perm: null, busy: false, again: false };
+const natId = (day, t, r) => (Math.round(Date.parse(day + "T00:00:00Z") / 86400000) % 20000) * 10000 + t * 4 + r;
+async function nativeInit(){
+  const C = window.Capacitor;
+  if(!(C?.isNativePlatform?.() && window.capacitorLocalNotifications)) return;
+  NAT.on = true; NAT.LN = window.capacitorLocalNotifications.LocalNotifications;
+  NAT.App = window.capacitorApp?.App || null; NAT.tts = window.capacitorTextToSpeech?.TextToSpeech || null;
+  try {
+    await NAT.LN.createChannel({ id: "tomas", name: "Tomas de medicamento", description: "Avisos para tomar las pastillas", importance: 5, visibility: 1, sound: "aviso.wav", vibration: true, lights: true, lightColor: "#0E7A62" });
+    await NAT.LN.createChannel({ id: "citas", name: "Citas médicas", description: "Recordatorios de citas", importance: 4, visibility: 1, sound: "aviso.wav", vibration: true });
+    await NAT.LN.registerActionTypes({ types: [{ id: "TOMA", actions: [{ id: "TOMADA", title: "Ya me la tomé", foreground: true }] }] });
+  } catch {}
+  try { NAT.LN.addListener("localNotificationActionPerformed", a => onNatAction(a)); } catch {}
+  try { NAT.App?.addListener("appStateChange", st => { if(st.isActive){ render(); queueNative(true); } }); } catch {}
+  try {
+    let p = await NAT.LN.checkPermissions();
+    if(p.display !== "granted") p = await NAT.LN.requestPermissions();
+    NAT.perm = p.display;
+  } catch {}
+  queueNative(true);
+}
+function queueNative(now){
+  if(!NAT.on || !ready) return;
+  clearTimeout(NAT.t); NAT.t = setTimeout(scheduleNative, now ? 50 : 1500);
+}
+function natBody(ds){
+  const many = new Set(ds.map(d => d.med.pacienteId)).size > 1 || focusIds().length > 1;
+  return ds.map(d => `${many ? firstName(d.med.pacienteId) + ": " : ""}${d.med.nombre}${d.med.dosis ? " " + d.med.dosis.replace(/\s*·\s*/g, ", ") : ""}`).join(" · ");
+}
+async function scheduleNative(){
+  if(!NAT.on) return;
+  if(NAT.busy){ NAT.again = true; return; }
+  NAT.busy = true;
+  try {
+    const now = new Date(), nowMs = now.getTime(), list = [];
+    const real = [...S.pacientes.entries()].filter(([, p]) => !p.ejemplo).map(([id]) => id);
+    const pids = real.length ? real : [...S.pacientes.keys()];
+    for(let k = 0; k < 14; k++){
+      const dt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k), day = ymd(dt), slots = new Map();
+      pids.forEach(pid => dayDoses(day, null, pid).forEach(d => {
+        if(d.st === "tomada" || d.st === "omitida") return;
+        if(!slots.has(d.t)) slots.set(d.t, []); slots.get(d.t).push(d);
+      }));
+      for(const [t, ds] of slots){
+        const at = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), Math.floor(t/60), t%60).getTime();
+        const body = natBody(ds), look = ds.length === 1 ? `Es la ${aspectoH(ds[0].med)}.` : "";
+        (k < 7 ? [0, 10, 20] : [0]).forEach((off, r) => {
+          const when = at + off * 60000; if(when <= nowMs + 5000) return;
+          list.push({ id: natId(day, t, r), channelId: "tomas", actionTypeId: "TOMA", autoCancel: true, smallIcon: "ic_stat_pill", iconColor: "#0E7A62",
+            title: r ? `Recordatorio · pastilla de las ${sHora(t)}` : `Hora de su pastilla · ${sHora(t)}`,
+            body: r ? `Todavía no la marca: ${body}` : body, largeBody: `${r ? "Todavía no la marca: " : ""}${body}. ${look} Toque «Ya me la tomé» cuando se la tome.`,
+            extra: { kind: "toma", day, t }, schedule: { at: new Date(when), allowWhileIdle: true } });
+        });
+      }
+    }
+    const today = ymd(now);
+    [...S.citas.values()].filter(c => pids.includes(c.pacienteId) && c.estado !== "cancelada" && c.fecha >= today)
+      .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora)).slice(0, 8).forEach((c, i) => {
+        const [y, m, d] = c.fecha.split("-").map(Number), hh = toMin(c.hora);
+        const eve = new Date(y, m-1, d-1, 19, 0).getTime(), pre = new Date(y, m-1, d, Math.floor(hh/60), hh%60).getTime() - 2*3600000;
+        const txt = `${c.especialidad || "Consulta"} ${fechaH(c.fecha)} a ${horaH(hh)}${c.lugar ? ", " + c.lugar.replace(/\s*\(.*?\)/g, "") : ""}.`;
+        if(eve > nowMs + 5000) list.push({ id: 1900000000 + i*2, channelId: "citas", smallIcon: "ic_stat_pill", iconColor: "#2D59A3", autoCancel: true, title: "Mañana tiene cita", body: txt, largeBody: txt + (c.preparacion ? " Recuerde: " + c.preparacion : ""), extra: { kind: "cita" }, schedule: { at: new Date(eve), allowWhileIdle: true } });
+        if(pre > nowMs + 5000) list.push({ id: 1900000001 + i*2, channelId: "citas", smallIcon: "ic_stat_pill", iconColor: "#2D59A3", autoCancel: true, title: "Su cita es en 2 horas", body: txt, largeBody: txt + (c.preparacion ? " Recuerde: " + c.preparacion : ""), extra: { kind: "cita" }, schedule: { at: new Date(pre), allowWhileIdle: true } });
+      });
+    const sig = JSON.stringify(list.map(n => [n.id, +n.schedule.at, n.body]));
+    if(sig !== NAT.sig){
+      const pend = await NAT.LN.getPending();
+      const old = (pend.notifications || []).filter(n => n.id !== 999001).map(n => ({ id: n.id }));
+      if(old.length) await NAT.LN.cancel({ notifications: old });
+      if(list.length) await NAT.LN.schedule({ notifications: list });
+      NAT.sig = sig;
+    }
+    const mains = list.filter(n => n.channelId === "tomas" && n.id % 4 === 0).sort((a, b) => a.schedule.at - b.schedule.at);
+    NAT.count = list.length; NAT.next = mains[0] ? mains[0].schedule.at : null;
+  } catch(e) { NAT.err = String(e?.message || e); }
+  finally { NAT.busy = false; renderNat(); if(NAT.again){ NAT.again = false; queueNative(); } }
+}
+async function onNatAction(a){
+  const ex = a?.notification?.extra || {};
+  if(ex.kind === "toma"){
+    const today = ymd(new Date());
+    if(a.actionId === "TOMADA" && ex.day === today){
+      const pids = focusIds().length ? focusIds() : [...S.pacientes.keys()];
+      const ds = pids.flatMap(pid => dayDoses(today, null, pid)).filter(d => d.t === ex.t && d.st !== "tomada");
+      for(const d of ds) await markDose(d.medId, d.t, "tomada");
+      if(SM.on) sSay(`Muy bien. Ya quedó anotado.`);
+    }
+  }
+  if(!SM.on && ls.get("pf-simple", false)) enterSimple();
+  if(SM.on && a.actionId !== "TOMADA"){ SM.unlocked = true; $("#sUnlock").hidden = true; sSay(sNowText()); }
+  render();
+}
+function renderNat(){
+  const box = $("#sNat"); if(!box) return;
+  if(!NAT.on){ box.innerHTML = ""; return; }
+  const off = NAT.perm && NAT.perm !== "granted";
+  box.innerHTML = `<div class="s-panel" style="gap:10px"><div class="row spread" style="gap:10px"><b style="font-size:1.15rem">${off ? "🔕 Los avisos están apagados" : "🔔 Avisos activados"}</b>${NAT.next && !off ? `<span class="hint" style="font-size:1rem">próximo: ${DIAS_L[NAT.next.getDay()]} ${sHora(NAT.next.getHours()*60 + NAT.next.getMinutes())}</span>` : ""}</div>
+    ${off ? `<p style="margin:0;font-size:1.05rem">Sin permiso de notificaciones el teléfono no le puede avisar con la pantalla apagada.</p><button class="s-small" id="natPerm" type="button" style="background:var(--accent)">Activar avisos</button>` : `<p class="hint" style="margin:0;font-size:1rem">Le aviso aunque el teléfono esté en reposo. Si no la marca, le recuerdo a los 10 y 20 minutos.</p>`}
+    <button class="s-small" id="natTest" type="button" style="background:var(--sunk);color:var(--ink)">Probar aviso en 1 minuto</button></div>`;
+  const pb = $("#natPerm"); if(pb) pb.onclick = async () => { try { const p = await NAT.LN.requestPermissions(); NAT.perm = p.display; } catch {} if(NAT.perm !== "granted") toast("Actívelos en Ajustes del teléfono › Apps › Pastillero › Notificaciones"); queueNative(true); };
+  $("#natTest").onclick = async () => {
+    try { await NAT.LN.schedule({ notifications: [{ id: 999001, channelId: "tomas", smallIcon: "ic_stat_pill", iconColor: "#0E7A62", title: "Prueba del pastillero", body: "Si escucha esto, los avisos funcionan con la pantalla apagada.", schedule: { at: new Date(Date.now() + 60000), allowWhileIdle: true } }] });
+      sSay("Listo. Apague la pantalla y espere un minuto. Le va a sonar un aviso de prueba."); }
+    catch { toast("No se pudo programar la prueba"); }
+  };
+}
+nativeInit();
+
 /* ---------- Pestañas ---------- */
 const VALID = ["asistente","hoy","meds","citas","registro","paciente"];
 function setView(v){
@@ -1897,6 +2019,7 @@ boot();
   let vozGoogle = null;
   
   function elegirVozGoogle(){
+    if(!window.speechSynthesis) return null;
     const voces = speechSynthesis.getVoices();
     // Prioriza voces Google en español
     const pref = [
@@ -1915,6 +2038,7 @@ boot();
   
   function hablarGoogle(texto, mostrarMini=false){
     if(!texto) return;
+    if(!window.speechSynthesis){ if(window.PF_SPEAK) window.PF_SPEAK(texto); return; }
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(texto);
     u.lang = 'es-MX';
@@ -1930,7 +2054,7 @@ boot();
     speechSynthesis.speak(u);
   }
   
-  speechSynthesis.onvoiceschanged = ()=>{ vozGoogle = elegirVozGoogle(); };
+  if(window.speechSynthesis) speechSynthesis.onvoiceschanged = ()=>{ vozGoogle = elegirVozGoogle(); };
   // precarga
   setTimeout(()=>{ vozGoogle = elegirVozGoogle(); }, 500);
   
@@ -1957,7 +2081,7 @@ boot();
   
   // Click en botón = lee resumen de hoy con voz Google
   btn.onclick = ()=>{
-    if(speechSynthesis.speaking){ speechSynthesis.cancel(); return; }
+    if(window.speechSynthesis && speechSynthesis.speaking){ speechSynthesis.cancel(); return; }
     const alertas = Array.from(document.querySelectorAll('.alert')).map(a=>a.innerText.trim()).slice(0,2).join('. ');
     if(alertas){
       hablarGoogle(alertas, true);
