@@ -301,6 +301,16 @@ main,.doc,section.view{grid-template-columns:minmax(0,1fr)}
 .s-fam p{margin:0;font-size:1.35rem;font-weight:700;line-height:1.35}
 .s-btn.wa{background:var(--wa);border-color:var(--wa);color:#fff}
 .s-btn.wide{grid-column:1/-1;min-height:80px}
+.s-mic{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-size:1.4rem;min-height:104px}
+.s-mic small{font-family:var(--f-body);font-weight:500;font-size:1rem;opacity:.85}
+.s-mic.on{background:var(--late);border-color:var(--late);animation:pulse 1.2s ease-in-out infinite}
+#sAlerts{display:grid;gap:10px}
+#sAlerts:empty{display:none}
+.s-alert{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;border-radius:18px;padding:14px 16px;font-size:1.15rem;font-weight:700;border:2px solid var(--line);background:var(--surface)}
+.s-alert.bp{border-color:var(--late);background:var(--late-soft)}
+.s-alert.rec{border-color:var(--due);background:var(--due-soft)}
+.s-alert.upd{border-color:var(--cita);background:var(--cita-soft)}
+.s-alert span{flex:1;min-width:180px}
 .s-exit{justify-self:center;background:none;border:0;color:var(--muted);text-decoration:underline;font-size:1rem;cursor:pointer;padding:12px}
 .s-unlock{position:fixed;inset:0;z-index:30;background:color-mix(in srgb,var(--bg) 88%,transparent);display:grid;place-items:center;padding:24px}
 .s-unlock button{border:0;border-radius:28px;background:var(--accent);color:var(--accent-ink);font-size:2rem;font-weight:800;padding:34px 28px;max-width:520px;width:100%;cursor:pointer;display:grid;gap:10px;box-shadow:0 10px 40px rgba(0,0,0,.25)}
@@ -443,7 +453,7 @@ footer b{font-family:var(--f-mono);color:var(--ink)}
     <div class="row spread"><h2>Signos y notas</h2>
       <div class="row"><button class="btn ghost" id="dlCsv">Descargar historial (CSV)</button><button class="btn primary" id="addReg">+ Nuevo registro</button></div>
     </div>
-    <div class="card" id="sumCard"><div class="row spread"><h3>Resumen para el doctor · últimos 7 días</h3><div class="row" style="gap:8px"><button class="btn small ghost" id="sumCopy">Copiar texto</button><a class="btn small ghost" id="sumWa" target="_blank" rel="noopener" style="text-decoration:none">Enviar por WhatsApp</a></div></div>
+    <div class="card" id="sumCard"><div class="row spread"><h3>Resumen para el doctor · últimos 7 días</h3><div class="row" style="gap:8px"><button class="btn small primary" id="sumPdf">Resumen en PDF (30 días)</button><button class="btn small ghost" id="sumCopy">Copiar texto</button><a class="btn small ghost" id="sumWa" target="_blank" rel="noopener" style="text-decoration:none">Enviar por WhatsApp</a></div></div>
 
 <div id="wa-config" style="margin-top:12px;background:var(--sunk);border:1px solid var(--line);border-radius:12px;padding:12px;display:grid;gap:10px">
   <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -565,8 +575,10 @@ footer b{font-family:var(--f-mono);color:var(--ink)}
     <div class="s-bubble" id="sBubble" aria-live="polite">Hola.</div>
   </div>
   <div id="sNow"></div>
+  <div id="sAlerts"></div>
   <div id="sFam"></div>
   <div class="s-grid">
+    <button class="s-btn s-mic wide" id="sMic" type="button"><span class="s-ico">🎤</span>Pregúntele al doctor<small>toque y hable</small></button>
     <button class="s-btn" data-s="toca"><span class="s-ico">🔊</span>¿Qué me toca?</button>
     <button class="s-btn" data-s="hoy"><span class="s-ico">💊</span>Mis pastillas de hoy</button>
     <button class="s-btn" data-s="cita"><span class="s-ico">📅</span>Mi próxima cita</button>
@@ -738,7 +750,7 @@ async function markDose(medId, t, estado){
   if(prev && prev.estado === estado){ // deshacer
     await del("tomas", id);
     if(estado==="tomada" && m && m.existencia != null && m.existencia !== "") await put("meds", medId, {...m, existencia: Number(m.existencia) + (Number(m.porToma)||1)});
-    toast("Marca quitada"); return;
+    toast("Marca quitada"); famQueue(); return;
   }
   await put("tomas", id, { pacienteId: m.pacienteId, medId, medNombre: m.nombre, dosis: m.dosis||"", fecha: day, hora: hm(t), estado, registradoEn: new Date().toISOString() });
   if(m && m.existencia !== "" && m.existencia != null){
@@ -748,6 +760,7 @@ async function markDose(medId, t, estado){
     if(ex !== Number(m.existencia)) await put("meds", medId, {...m, existencia: Math.max(0, ex)});
   }
   toast(estado==="tomada" ? `${m.nombre}: toma registrada` : `${m.nombre}: marcada como omitida`);
+  famOnMark(m, t, estado);
 }
 
 /* ---------- Avisos y sonido ---------- */
@@ -795,7 +808,7 @@ function render(){
   $("#bCitas").hidden = !soon.length; $("#bCitas").textContent = soon.length;
   checkAlarms(doses);
   renderHoy(doses, late, due, fut, soon, day, tomorrow, nowMin);
-  renderMeds(); renderCitas(citas, fut, day); renderRegistro(); renderSummary(); renderBP(); renderPacientes(); backupInfo(); renderAsistente(); renderSimple(); queueNative();
+  renderMeds(); renderCitas(citas, fut, day); renderRegistro(); renderSummary(); renderBP(); renderPacientes(); backupInfo(); renderAsistente(); renderSimple(); queueNative(); famQueue();
   document.querySelectorAll("[data-w]").forEach(b => b.disabled = !canWrite);
 }
 
@@ -820,6 +833,7 @@ function renderHoy(doses, late, due, fut, soon, day, tomorrow, nowMin){
   if(due.length) a += `<div class="alert due pulse"><div class="txt"><strong>Le toca ahora</strong><p>${due.map(d=>`${esc(d.med.nombre)} ${esc(d.med.dosis||"")} — ${esc(pacName(d.med.pacienteId))}`).join(" · ")}</p></div></div>`;
   soon.forEach(c => a += `<div class="alert cita"><div class="txt"><strong>Cita ${c.fecha===day?"hoy":"mañana"} a las ${esc(c.hora)}</strong><p>${esc(c.especialidad||"Consulta")} ${c.doctor?"con "+esc(c.doctor):""} · ${esc(pacName(c.pacienteId))}${c.preparacion?` · <b>Preparación:</b> ${esc(c.preparacion)}`:""}</p></div></div>`);
   const low = [...S.meds.entries()].filter(([,m])=>inScope(m) && m.activo!==false && lowStock(m));
+  recetasPorVencer(focusIds(), recCfg().recetaDias).forEach(r => { a += `<div class="alert due"><div class="txt"><strong>Receta por terminar · ${esc(r.m.nombre)}</strong><p>${r.dias < 0 ? "Terminó " + fCorta(r.m.fin) + ". Si se la resurtieron, cambia la fecha de fin en Medicamentos." : "Termina " + fechaH(r.m.fin) + ". Pide el resurtido."} · ${esc(pacName(r.m.pacienteId))}</p></div></div>`; });
   if(low.length) a += `<div class="alert due"><div class="txt"><strong>Surtir pronto</strong><p>${low.map(([,m])=>`${esc(m.nombre)}: quedan ${m.existencia} (${daysLeft(m)} días)`).join(" · ")}</p></div></div>`;
   $("#alerts").innerHTML = a;
 
@@ -1103,6 +1117,13 @@ $("#dlCsv").onclick = async () => {
 /* ---------- Descargar archivos (en Claude o como HTML suelto) ---------- */
 async function saveFile(filename, blob){
   try{
+    if(window.Capacitor?.isNativePlatform?.() && window.capacitorExports){
+      const FS = natPlugin("Filesystem"), SH = natPlugin("Share");
+      const b64 = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(",")[1]); fr.onerror = rej; fr.readAsDataURL(blob); });
+      const w = await FS.writeFile({ path: filename, data: b64, directory: "CACHE" });
+      await SH.share({ title: filename, files: [w.uri], dialogTitle: "Guardar o enviar" }).catch(() => {});
+      return true;
+    }
     if(downloads){ await downloads.save({ filename, data: blob }); return true; }
     if(window.claude){ toast("Esta vista no permite descargar archivos"); return false; }
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = filename;
@@ -1137,7 +1158,7 @@ async function syncRemote(){
   }catch{}
 }
 document.addEventListener("visibilitychange", () => { if(!document.hidden) syncRemote(); });
-const APP_VER = "21 nov 2026";
+const APP_VER = "25 nov 2026";
 document.querySelectorAll(".appver").forEach(e => e.textContent = "versión " + APP_VER);
 if(!window.claude){
   if("serviceWorker" in navigator && location.protocol === "https:" && !window.Capacitor?.isNativePlatform?.()) navigator.serviceWorker.register("sw.js").catch(() => {});
@@ -1536,6 +1557,7 @@ async function photoToDataURL(file, size = 320, wide = false){
   } finally { URL.revokeObjectURL(url); }
 }
 function openCfg(){
+  const fc = famCfg(), rc = recCfg();
   const c = cfg(), vs = esVoices(), cur = pickVoice();
   openForm("Tu asistente", `
     <div class="field full"><label>Cara del asistente</label>
@@ -1557,6 +1579,23 @@ function openCfg(){
         <div style="display:grid;gap:8px;min-width:0;flex:1"><label class="btn ghost small" for="f-famfile" style="text-align:center">Foto de la familia…</label><input type="file" id="f-famfile" accept="image/*" hidden><button type="button" class="btn small ghost" id="famQuitar">Quitar foto</button></div></div>
         <div class="field"><label for="f-mensaje">Mensaje para ella (el doctor se lo lee al abrir)</label><textarea id="f-mensaje" name="mensaje" maxlength="280" placeholder="Ej. Te quiero mucho, ma. Hoy paso a verte en la tarde.">${esc(c.mensaje||"")}</textarea></div>
         <input type="hidden" name="fotoFam" id="f-fotoFam" value="${FOTO_OK.test(c.fotoFam||"") ? c.fotoFam : ""}"></div></div>
+    <div class="field full"><label>Avisar a la familia (ntfy)</label>
+      <div class="pillbox">
+        <p class="hint" style="margin:0">Si ella no marca su pastilla, te llega un aviso a tu teléfono. Instala la app gratuita <b>ntfy</b> (Play Store o App Store), toca <b>+</b> y suscríbete a este tema. Configúralo en el teléfono de ella.</p>
+        <div class="fgrid">
+          <div class="field"><label for="f-famActivo">Avisos a la familia</label><select id="f-famActivo" name="famActivo"><option value="1" ${fc.activo?"selected":""}>Activados</option><option value="0" ${fc.activo?"":"selected"}>Apagados</option></select></div>
+          <div class="field"><label for="f-famMin">Avisar si no la marca en</label><select id="f-famMin" name="famMin">${[30,45,60,90].map(v => `<option value="${v}" ${Number(fc.minutos||45)===v?"selected":""}>${v} minutos</option>`).join("")}</select></div>
+          <div class="field"><label for="f-famTomas">Avisar también cuando se la tome</label><select id="f-famTomas" name="famTomas"><option value="1" ${fc.avisarTomas!==false?"selected":""}>Sí</option><option value="0" ${fc.avisarTomas===false?"selected":""}>No</option></select></div>
+        </div>
+        <div class="field"><label for="f-famTopic">Tema privado (como una contraseña: no lo compartas)</label><div class="row" style="flex-wrap:nowrap"><input id="f-famTopic" name="famTopic" class="mono" value="${esc(fc.topic || famNewTopic())}" style="flex:1;min-width:0"><button type="button" class="btn small ghost" id="famCopy">Copiar</button><button type="button" class="btn small ghost" id="famGen">Otro</button></div></div>
+        <div class="row"><button type="button" class="btn small ghost" id="famTest">Enviar aviso de prueba</button><span class="hint" id="famTestOut"></span></div>
+      </div></div>
+    <div class="field full"><label>Recordatorios</label>
+      <div class="fgrid">
+        <div class="field"><label for="f-bpOn">Recordar tomarse la presión</label><select id="f-bpOn" name="bpOn"><option value="1" ${rc.presion?"selected":""}>Sí, diario</option><option value="0" ${rc.presion?"":"selected"}>No</option></select></div>
+        <div class="field"><label for="f-bpHora">Hora de la presión</label><input type="time" id="f-bpHora" name="bpHora" value="${esc(rc.presionHora)}"></div>
+        <div class="field"><label for="f-recDias">Avisar que se acaba la receta</label><select id="f-recDias" name="recDias">${[3,5,7,10,14].map(v => `<option value="${v}" ${Number(rc.recetaDias)===v?"selected":""}>${v} días antes</option>`).join("")}</select></div>
+      </div></div>
     <div class="row"><button type="button" class="btn ghost" id="vozTest">Probar voz</button>${tts ? "" : `<span class="hint">Este navegador no tiene voz; el asistente responderá solo por escrito.</span>`}</div>`,
     async d => {
       voiceURI = d.voz || ""; voiceRate = Number(d.vel) || 1; voiceOn = d.vozon === "1";
@@ -1565,6 +1604,13 @@ function openCfg(){
       const nuevo = { ...c, nombre, foto, bata: d.bata !== "0", mensaje: String(d.mensaje||"").trim().slice(0,280), fotoFam: FOTO_OK.test(d.fotoFam||"") ? d.fotoFam : "" };
       if(nuevo.mensaje !== (c.mensaje||"")) nuevo.mensajeFecha = ymd(new Date());
       if(JSON.stringify(nuevo) !== JSON.stringify(c)) await put("config", "asistente", nuevo);
+      const topic = String(d.famTopic||"").trim().replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+      const fam = { activo: d.famActivo === "1" && topic.length >= 12, topic, minutos: Number(d.famMin) || 45, avisarTomas: d.famTomas !== "0" };
+      if(JSON.stringify(fam) !== JSON.stringify(famCfg())) await put("config", "familia", fam);
+      const rec = { presion: d.bpOn === "1", presionHora: /^\d{2}:\d{2}$/.test(d.bpHora||"") ? d.bpHora : "09:00", recetaDias: Number(d.recDias) || 7 };
+      if(JSON.stringify(rec) !== JSON.stringify(recCfg())) await put("config", "recordatorios", rec);
+      if(d.famActivo === "1" && topic.length < 12) toast("El tema debe tener al menos 12 letras o números");
+      NAT.sig = ""; queueNative(true); famQueue();
       AS.lastFace = null; SM.lastMini = null; updateAvatar(); renderSimple(); toast("Asistente actualizado");
     }, null);
   $("#f-fotofile").onchange = async e => {
@@ -1580,6 +1626,16 @@ function openCfg(){
   };
   $("#famQuitar").onclick = () => { $("#f-fotoFam").value = ""; $("#famPrev").innerHTML = `<span class="hint" style="display:grid;place-items:center;height:100%">Sin foto</span>`; };
   $("#f-vel").oninput = e => $("#velOut").textContent = Number(e.target.value).toFixed(1);
+  $("#famGen").onclick = () => { $("#f-famTopic").value = famNewTopic(); };
+  $("#famCopy").onclick = async () => { const v = $("#f-famTopic").value; try { await navigator.clipboard.writeText(v); toast("Tema copiado"); } catch { $("#f-famTopic").select(); toast("Selecciona y copia el tema"); } };
+  $("#famTest").onclick = async () => {
+    const topic = String($("#f-famTopic").value||"").trim();
+    if(window.claude){ $("#famTestOut").textContent = "La prueba funciona en el teléfono de ella o en tu página de GitHub, no aquí."; return; }
+    if(!/^[A-Za-z0-9_-]{12,64}$/.test(topic)){ $("#famTestOut").textContent = "Tema inválido: usa al menos 12 letras o números."; return; }
+    $("#famTestOut").textContent = "Enviando…";
+    try { const r = await fetch(NTFY + "/", { method: "POST", body: JSON.stringify({ topic, title: "Prueba del pastillero", message: "Si ves esto, los avisos de la familia funcionan.", tags: ["pill"], priority: 3 }) }); $("#famTestOut").textContent = r.ok ? "Enviado. Revisa la app ntfy en tu teléfono." : "No se pudo enviar (" + r.status + ")."; }
+    catch { $("#famTestOut").textContent = "Sin conexión a internet."; }
+  };
   $("#vozTest").onclick = () => {
     const prev = [voiceURI, voiceRate, voiceOn]; voiceURI = $("#f-voz").value; voiceRate = Number($("#f-vel").value) || 1; voiceOn = true;
     speak(`Hola, soy ${String($("#f-nombre").value||"").trim() || "tu asistente"}. Así voy a sonar cuando te diga qué pastilla toca.`);
@@ -1697,6 +1753,7 @@ function renderSimple(){
     $("#sFam").innerHTML = (cf.mensaje || FOTO_OK.test(cf.fotoFam||"")) ? `<div class="s-fam"><div class="s-lbl" style="font-size:1rem;font-weight:800;text-transform:uppercase;letter-spacing:.07em;opacity:.75">Mensaje de su familia</div>${FOTO_OK.test(cf.fotoFam||"") ? `<img src="${cf.fotoFam}" alt="Foto de la familia">` : ""}${cf.mensaje ? `<p>${esc(cf.mensaje)}</p>` : ""}</div>` : "";
   }
   sReminders(ds);
+  renderSAlerts();
 }
 function renderSPanel(){
   const box = $("#sPanel");
@@ -1728,7 +1785,8 @@ async function sSaveBP(){
   else if(sis >= 140 || dia >= 90) t += " Está algo alta. Siga sus pastillas como se las recetaron y coménteselo a su doctor.";
   else if(sis < 90 || dia < 60) t += " Está baja. Si se siente mareada, siéntese o acuéstese y avísele a su familia.";
   else t += " Muy bien.";
-  SM.panel = null; renderSPanel(); sSay(t);
+  famSend(`❤️ Presión de ${firstName(SM.pid)}: ${sis}/${dia}`, `Anotada a las ${sHora(n.getHours()*60 + n.getMinutes())}${pul ? ` · pulso ${pul}` : ""} · ${sis >= 180 || dia >= 120 ? "MUY ALTA: llámale ahora." : sis >= 140 || dia >= 90 ? "Algo alta." : sis < 90 || dia < 60 ? "Baja." : "Normal."}`, sis >= 180 || dia >= 120 ? 5 : sis >= 140 || dia >= 90 ? 4 : 2, ["heart"]);
+  SM.panel = null; renderSPanel(); renderSAlerts(); sSay(t);
 }
 function sReminders(ds){
   if(!SM.unlocked) return;
@@ -1761,6 +1819,7 @@ $("#simple").addEventListener("click", e => {
   const d = sDoses().find(x => x.medId === id && x.t === Number(t));
   if(d) sTake([d]); else b.disabled = false;
 });
+$("#sMic").onclick = () => sListen();
 document.querySelectorAll("#simple [data-s]").forEach(b => b.onclick = () => {
   AS.interacted = true; const k = b.dataset.s;
   if(!SM.pid) return;
@@ -1789,10 +1848,10 @@ $("#sExit").onclick = () => {
 $("#goSimple").onclick = () => { const p = focusIds()[0]; if(p) ls.set("pf-simple-pac", p); SM.unlocked = true; enterSimple(); $("#sUnlock").hidden = true; sSay(SM.pid ? `Así lo verá ${firstName(SM.pid)}. ${sNowText()}` : "Primero hay que cargar sus datos."); };
 
 /* Resumen semanal para el doctor */
-function weekSummary(){
+function weekSummary(nd = 7){
   const ids = focusIds(); if(!ids.length) return [];
   const now = new Date(), nowMin = now.getHours()*60 + now.getMinutes(), today = ymd(now);
-  const days = [...Array(7)].map((_, i) => ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6 + i)));
+  const days = [...Array(nd)].map((_, i) => ymd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - (nd - 1) + i)));
   return ids.map(id => {
     const per = new Map(), missed = [];
     for(const day of days){
@@ -1884,13 +1943,14 @@ async function nativeInit(){
     await NAT.LN.registerActionTypes({ types: [{ id: "TOMA", actions: [{ id: "TOMADA", title: "Ya me la tomé", foreground: true }] }] });
   } catch {}
   try { NAT.LN.addListener("localNotificationActionPerformed", a => onNatAction(a)); } catch {}
-  try { NAT.App?.addListener("appStateChange", st => { if(st.isActive){ render(); queueNative(true); } }); } catch {}
+  try { NAT.App?.addListener("appStateChange", st => { if(st.isActive){ render(); queueNative(true); famQueue(); checkUpdate(); } }); } catch {}
   try {
     let p = await NAT.LN.checkPermissions();
     if(p.display !== "granted") p = await NAT.LN.requestPermissions();
     NAT.perm = p.display;
   } catch {}
   queueNative(true);
+  checkUpdate();
 }
 function queueNative(now){
   if(!NAT.on || !ready) return;
@@ -1935,6 +1995,21 @@ async function scheduleNative(){
         if(eve > nowMs + 5000) list.push({ id: 1900000000 + i*2, channelId: "citas", smallIcon: "ic_stat_pill", iconColor: "#2D59A3", autoCancel: true, title: "Mañana tiene cita", body: txt, largeBody: txt + (c.preparacion ? " Recuerde: " + c.preparacion : ""), extra: { kind: "cita" }, schedule: { at: new Date(eve), allowWhileIdle: true } });
         if(pre > nowMs + 5000) list.push({ id: 1900000001 + i*2, channelId: "citas", smallIcon: "ic_stat_pill", iconColor: "#2D59A3", autoCancel: true, title: "Su cita es en 2 horas", body: txt, largeBody: txt + (c.preparacion ? " Recuerde: " + c.preparacion : ""), extra: { kind: "cita" }, schedule: { at: new Date(pre), allowWhileIdle: true } });
       });
+    const rc = recCfg();
+    if(rc.presion){
+      const [ph, pm] = String(rc.presionHora || "09:00").split(":").map(Number);
+      for(let k = 0; k < 14; k++){
+        const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + k, ph || 9, pm || 0).getTime();
+        if(k === 0 && pids.some(bpToday)) continue;
+        if(at > nowMs + 5000) list.push({ id: 1800000000 + k, channelId: "tomas", smallIcon: "ic_stat_pill", iconColor: "#B8392A", autoCancel: true,
+          title: "Hora de tomarse la presión", body: "Tómese la presión y anótela en el pastillero.", extra: { kind: "presion" }, schedule: { at: new Date(at), allowWhileIdle: true } });
+      }
+    }
+    recetasPorVencer(pids, 40).forEach((r, i) => [rc.recetaDias, 2].forEach((dd, j) => {
+      const [y, mo, d] = r.m.fin.split("-").map(Number), at = new Date(y, mo-1, d - dd, 10, 0).getTime();
+      if(at > nowMs + 5000) list.push({ id: 1700000000 + i*4 + j, channelId: "citas", smallIcon: "ic_stat_pill", iconColor: "#B97A00", autoCancel: true,
+        title: "Su receta se está terminando", body: `${r.m.nombre}: la receta termina ${fechaH(r.m.fin)}. Pida su resurtido.`, extra: { kind: "receta" }, schedule: { at: new Date(at), allowWhileIdle: true } });
+    }));
     const sig = JSON.stringify(list.map(n => [n.id, +n.schedule.at, n.body]));
     if(sig !== NAT.sig){
       const pend = await NAT.LN.getPending();
@@ -1943,7 +2018,7 @@ async function scheduleNative(){
       if(list.length) await NAT.LN.schedule({ notifications: list });
       NAT.sig = sig;
     }
-    const mains = list.filter(n => n.channelId === "tomas" && n.id % 4 === 0).sort((a, b) => a.schedule.at - b.schedule.at);
+    const mains = list.filter(n => n.extra?.kind === "toma" && n.id % 4 === 0).sort((a, b) => a.schedule.at - b.schedule.at);
     NAT.count = list.length; NAT.next = mains[0] ? mains[0].schedule.at : null;
   } catch(e) { NAT.err = String(e?.message || e); }
   finally { NAT.busy = false; renderNat(); if(NAT.again){ NAT.again = false; queueNative(); } }
@@ -1960,6 +2035,7 @@ async function onNatAction(a){
     }
   }
   if(!SM.on && ls.get("pf-simple", false)) enterSimple();
+  if(ex.kind === "presion" && SM.on){ SM.unlocked = true; $("#sUnlock").hidden = true; SM.panel = "presion"; renderSPanel(); sSay("Escriba su presión: el número de arriba y el de abajo."); render(); return; }
   if(SM.on && a.actionId !== "TOMADA"){ SM.unlocked = true; $("#sUnlock").hidden = true; sSay(sNowText()); }
   render();
 }
@@ -1978,6 +2054,239 @@ function renderNat(){
   };
 }
 nativeInit();
+
+/* ---------- Avisos a la familia (ntfy.sh, sin cuentas) ---------- */
+const NTFY = "https://ntfy.sh";
+const famCfg = () => S.config.get("familia") || {};
+const recCfg = () => ({ presion: true, presionHora: "09:00", recetaDias: 7, ...(S.config.get("recordatorios") || {}) });
+const famNewTopic = () => "pastillero-" + Array.from(crypto.getRandomValues(new Uint8Array(12)), b => "abcdefghijkmnpqrstuvwxyz23456789"[b % 32]).join("");
+const FAM = { t: null, busy: false, again: false, taken: [], tt: null };
+const famOn = () => { const f = famCfg(); return !!(f.activo && /^[A-Za-z0-9_-]{12,64}$/.test(f.topic || "")) && !window.claude; };
+function famQueue(){ if(!famOn() || !ready) return; clearTimeout(FAM.t); FAM.t = setTimeout(famSync, 2500); }
+async function famPost(body){
+  const r = await fetch(NTFY + "/", { method: "POST", body: JSON.stringify({ topic: famCfg().topic, ...body }) });
+  if(!r.ok) throw new Error("ntfy " + r.status);
+  return r;
+}
+async function famSend(title, message, priority = 3, tags = []){
+  if(!famOn()) return false;
+  try { await famPost({ title, message, priority, tags }); return true; } catch { return false; }
+}
+const famPids = () => { const real = [...S.pacientes.entries()].filter(([, p]) => !p.ejemplo).map(([id]) => id); return real.length ? real : [...S.pacientes.keys()]; };
+function famDesired(){
+  const mins = Number(famCfg().minutos) || 45, now = Date.now(), lim = now + 70*3600000, out = {}, pids = famPids(), base = new Date();
+  for(let k = 0; k < 4; k++){
+    const dt = new Date(base.getFullYear(), base.getMonth(), base.getDate() + k), day = ymd(dt), slots = new Map();
+    pids.forEach(pid => dayDoses(day, null, pid).forEach(d => { if(d.st === "tomada" || d.st === "omitida") return; if(!slots.has(d.t)) slots.set(d.t, []); slots.get(d.t).push(d); }));
+    for(const [t, ds] of slots){
+      const at = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate(), Math.floor(t/60), t%60).getTime() + mins*60000;
+      if(at <= now + 60000 || at > lim) continue;
+      const who = joinY([...new Set(ds.map(d => firstName(d.med.pacienteId)))]);
+      out[`pf-${day.replace(/-/g, "")}-${t}`] = { at, title: `⚠️ ${who} no ha marcado su pastilla`, message: `La de las ${sHora(t)} (${ds.map(d => d.med.nombre).join(", ")}) sigue sin marcarse después de ${mins} minutos. Llámale para confirmar.` };
+    }
+  }
+  return out;
+}
+async function famSync(){
+  if(!famOn()) return;
+  if(FAM.busy){ FAM.again = true; return; }
+  FAM.busy = true;
+  try {
+    const topic = famCfg().topic, sched = ls.get("pf-fam-sched", {}), want = famDesired(), now = Date.now();
+    const oldTopic = sched.__topic || topic;
+    for(const [seq, v] of Object.entries(sched)){
+      if(seq.startsWith("__")) continue;
+      if(v.at <= now){ delete sched[seq]; continue; }
+      const w = want[seq];
+      if(oldTopic !== topic || !w || w.at !== v.at || w.message !== v.message){
+        try { const r = await fetch(`${NTFY}/${oldTopic}/${seq}`, { method: "DELETE" }); if(r.ok || r.status === 404) delete sched[seq]; } catch {}
+      }
+    }
+    sched.__topic = topic;
+    for(const [seq, w] of Object.entries(want)){
+      if(sched[seq]) continue;
+      try { await famPost({ title: w.title, message: w.message, priority: 4, tags: ["warning"], delay: String(Math.floor(w.at / 1000)), sequence_id: seq }); sched[seq] = { at: w.at, message: w.message }; }
+      catch { break; }
+    }
+    ls.set("pf-fam-sched", sched);
+    // receta por terminar: un aviso por receta
+    for(const r of recetasPorVencer(famPids(), recCfg().recetaDias)){
+      const k = `pf-fam-rec-${r.id}-${r.m.fin}`;
+      if(r.dias < 0 || ls.get(k, false)) continue;
+      if(await famSend(`📋 Receta de ${firstName(r.m.pacienteId)} por terminar`, `${r.m.nombre}: la receta termina ${fechaH(r.m.fin)}. Hay que pedir el resurtido.`, 3, ["clipboard"])) ls.set(k, true);
+    }
+  } finally { FAM.busy = false; if(FAM.again){ FAM.again = false; famQueue(); } }
+}
+function famOnMark(m, t, estado){
+  famQueue();
+  if(estado !== "tomada" || !m || !famOn() || famCfg().avisarTomas === false) return;
+  FAM.taken.push({ m, t }); clearTimeout(FAM.tt);
+  FAM.tt = setTimeout(() => {
+    const list = FAM.taken.splice(0), now = new Date(), who = joinY([...new Set(list.map(x => firstName(x.m.pacienteId)))]);
+    famSend(`✅ ${who} se tomó su pastilla`, `${list.map(x => `${x.m.nombre} (${sHora(x.t)})`).join(", ")} · marcada a las ${sHora(now.getHours()*60 + now.getMinutes())}.`, 2, ["white_check_mark"]);
+  }, 4000);
+}
+window.addEventListener("online", () => famQueue());
+
+/* ---------- Recetas por terminar y presión del día ---------- */
+function recetasPorVencer(pids, dias){
+  const today = ymd(new Date()), hasta = ymd(new Date(Date.now() + dias*86400000)), desde = ymd(new Date(Date.now() - 3*86400000));
+  return [...S.meds.entries()].filter(([, m]) => pids.includes(m.pacienteId) && m.activo !== false && m.fin && m.fin >= desde && m.fin <= hasta)
+    .map(([id, m]) => ({ id, m, dias: Math.round((new Date(m.fin + "T00:00") - new Date(today + "T00:00")) / 86400000) }));
+}
+const bpToday = pid => [...S.registros.values()].some(r => r.pacienteId === pid && String(r.fechaHora).startsWith(ymd(new Date())) && r.presion);
+function renderSAlerts(){
+  const box = $("#sAlerts"); if(!box) return;
+  if(!SM.on || !SM.pid){ box.innerHTML = ""; return; }
+  const rc = recCfg(), now = new Date(), nowMin = now.getHours()*60 + now.getMinutes();
+  let h = "";
+  if(UPD.nuevo) h += `<div class="s-alert upd"><span>Hay una versión nueva del Pastillero</span><button class="s-small" id="sUpd" type="button" style="background:var(--cita)">Actualizar</button></div>`;
+  if(rc.presion && nowMin >= toMin(rc.presionHora) && !bpToday(SM.pid)) h += `<div class="s-alert bp"><span>❤️ ¿Ya se tomó la presión hoy?</span><button class="s-small" id="sBpGo" type="button" style="background:var(--late)">Anotarla</button></div>`;
+  recetasPorVencer([SM.pid], rc.recetaDias).forEach(r => {
+    h += `<div class="s-alert rec"><span>📋 ${r.dias < 0 ? `Su receta de <b>${esc(r.m.nombre)}</b> ya terminó. Si se la resurtieron, avísele a su familia.` : `Su receta de <b>${esc(r.m.nombre)}</b> se termina ${r.dias === 0 ? "hoy" : r.dias === 1 ? "mañana" : "en " + r.dias + " días"}. Pida su resurtido.`}</span></div>`;
+  });
+  if(box.innerHTML !== h) box.innerHTML = h;
+  const up = $("#sUpd"); if(up) up.onclick = () => { sSay("Voy a descargar la versión nueva. Cuando termine, toque el archivo y luego Instalar."); setTimeout(() => { location.href = UPD.nuevo.apk; }, 1500); };
+  const bp = $("#sBpGo"); if(bp) bp.onclick = () => { AS.interacted = true; SM.panel = "presion"; renderSPanel(); sSay("Escriba su presión: el número de arriba y el de abajo."); setTimeout(() => $("#sSis")?.focus(), 50); };
+}
+
+/* ---------- Preguntar hablando (modo sencillo) ---------- */
+function natPlugin(name){ NAT.pl = NAT.pl || {}; return NAT.pl[name] || (NAT.pl[name] = window.capacitorExports.registerPlugin(name)); }
+async function sListen(){
+  AS.interacted = true; stopSpeak(); if(!SM.pid) return;
+  const btn = $("#sMic");
+  const done = q => { setState("idle"); btn.classList.remove("on"); if(q) sAnswer(q); else sSay("No le escuché bien. Toque el micrófono y hable cerquita del teléfono."); };
+  if(window.Capacitor?.isNativePlatform?.() && window.capacitorExports){
+    const sr = natPlugin("SpeechRecognition");
+    try {
+      const av = await sr.available(); if(!av.available) return sSay("Este teléfono no tiene reconocimiento de voz. Use los botones de abajo.");
+      let p = await sr.checkPermissions(); if(p.speechRecognition !== "granted") p = await sr.requestPermissions();
+      if(p.speechRecognition !== "granted") return sSay("Necesito permiso del micrófono para escucharla.");
+      setState("listening"); btn.classList.add("on");
+      const r = await sr.start({ language: "es-MX", maxResults: 1, prompt: "Pregúntele al doctor", partialResults: false, popup: true });
+      return done((r.matches || [])[0] || "");
+    } catch { return done(""); }
+  }
+  const SRc = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SRc) return sSay("Aquí no puedo escucharla. Use los botones de abajo.");
+  try {
+    const rec = new SRc(); let said = "";
+    rec.lang = "es-MX"; rec.interimResults = false; rec.maxAlternatives = 1;
+    rec.onresult = e => { said = e.results[0][0].transcript; };
+    rec.onerror = e => { if(["not-allowed","service-not-allowed","audio-capture"].includes(e.error)) said = ""; };
+    rec.onend = () => done(said);
+    rec.start(); setState("listening"); btn.classList.add("on");
+  } catch { done(""); }
+}
+function sAnswer(q){
+  const n = norm(q), ds = sDoses(), due = ds.filter(d => d.st === "ahora" || d.st === "atrasada");
+  $("#sBubble").textContent = `«${q}»`;
+  if(/\bya\b/.test(n) && /(tome|tomo|tomamos|me la|me las)/.test(n)){ if(due.length) return sTake(due); return sSay("Ahorita no tiene ninguna pendiente. " + sNowText(true)); }
+  if(/presion/.test(n) && /(anot|apunt|registr|escrib|guard)/.test(n)){ SM.panel = "presion"; renderSPanel(); return sSay("Escriba su presión: el número de arriba y el de abajo."); }
+  if(/(cita|consulta|laboratorio|estudio|ayun|analisis)/.test(n)) return sSay(sCitaText().text);
+  if(/(receta|surtir|resurt|se acaba|se termina)/.test(n)){
+    const rs = recetasPorVencer([SM.pid], 30);
+    return sSay(rs.length ? rs.map(r => `Su receta de ${r.m.nombre} ${r.dias < 0 ? "ya terminó" : "termina " + fechaH(r.m.fin)}`).join(". ") + "." : "Sus recetas están al día por ahora.");
+  }
+  if(/(falta|hoy|cuales|cuantas|todas)/.test(n)){ const left = ds.filter(d => d.st !== "tomada" && d.st !== "omitida"); return sSay(left.length ? `Hoy le faltan ${left.length}: ${joinY(left.map(d => `${d.med.nombre} a ${horaH(d.t)}`))}.` : "Hoy ya se tomó todas. Muy bien."); }
+  if(/(llam|habl).*(hij|famil)|emergencia/.test(n)) return sSay("Abajo tiene los botones para llamar a su familia y para emergencias. Si es una emergencia, toque el botón rojo del 911.");
+  if(/(toca|tomar|pastilla|medicina|ahora|siguiente|ahorita)/.test(n)) return sSay(sNowText());
+  sSay(localAnswer(q).text);
+}
+
+/* ---------- Resumen en PDF para el médico ---------- */
+async function loadJsPDF(){
+  if(window.jspdf?.jsPDF) return window.jspdf.jsPDF;
+  await new Promise((res, rej) => { const sc = document.createElement("script"); sc.src = "https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js"; sc.onload = res; sc.onerror = rej; document.head.appendChild(sc); });
+  return window.jspdf.jsPDF;
+}
+async function makePDF(){
+  const W30 = weekSummary(30); if(!W30.length) return toast("Agrega un paciente primero");
+  let jsPDF; try { jsPDF = await loadJsPDF(); } catch { return toast("No pude preparar el PDF. Revisa tu conexión a internet."); }
+  const doc = new jsPDF({ unit: "mm", format: "letter" }), PW = 215.9, M = 16, CW = PW - 2*M;
+  const C = { ink: [22,48,42], mut: [85,112,106], acc: [14,122,98], late: [184,57,42], cita: [45,89,163], line: [203,214,208] };
+  let y = 0;
+  const clean = t => String(t ?? "").replace(/[^\x20-\x7E -ÿ]/g, "").replace(/\s+/g, " ").trim();
+  const need = h => { if(y + h > 262){ doc.addPage(); y = 18; } };
+  const txt = (t, x, size = 10, style = "normal", col = C.ink, w = CW) => { doc.setFont("helvetica", style); doc.setFontSize(size); doc.setTextColor(...col); const ls2 = doc.splitTextToSize(clean(t), w); need(ls2.length * size * 0.42 + 1); doc.text(ls2, x, y); y += ls2.length * size * 0.42 + 1.5; };
+  const h2 = t => { y += 3; need(12); doc.setFillColor(...C.acc); doc.rect(M, y - 4.2, 2.2, 6, "F"); txt(t, M + 5, 12.5, "bold"); y += 0.5; };
+  const kv = (k, v, col) => { if(!v) return; need(6); doc.setFont("helvetica", "bold"); doc.setFontSize(9.5); doc.setTextColor(...C.mut); doc.text(clean(k), M, y); const ls2 = doc.splitTextToSize(clean(v), CW - 42); doc.setFont("helvetica", col ? "bold" : "normal"); doc.setTextColor(...(col || C.ink)); doc.text(ls2, M + 42, y); y += ls2.length * 4.1 + 1.6; };
+  const hoy = new Date();
+  for(const [wi, w] of W30.entries()){
+    if(wi) { doc.addPage(); }
+    doc.setFillColor(...C.acc); doc.rect(0, 0, PW, 30, "F");
+    doc.setTextColor(255,255,255); doc.setFont("helvetica", "bold"); doc.setFontSize(19); doc.text("Resumen para el médico", M, 14);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.text(clean(`${w.p.nombre} · del ${fCorta(w.desde)} al ${fCorta(w.hasta)} · generado el ${hoy.getDate()} de ${MESES_L[hoy.getMonth()]} de ${hoy.getFullYear()}`), M, 22);
+    y = 40;
+    h2("Paciente");
+    kv("Nombre", w.p.nombre); kv("Edad", w.p.nacimiento ? `${edadDe(w.p.nacimiento)} años (nació el ${fechaLarga(w.p.nacimiento)})` : "");
+    kv("Alergias", w.p.alergias || "Ninguna registrada", w.p.alergias ? C.late : null); kv("Tipo de sangre", w.p.sangre);
+    kv("Diagnósticos", String(w.p.padecimientos||"").replace(/\s*·\s*/g, "; ")); kv("Seguro", w.p.seguro); kv("Médico", w.p.medico);
+    h2("Medicamentos actuales");
+    const meds = [...S.meds.values()].filter(m => m.pacienteId === w.id && m.activo !== false && (!m.fin || m.fin >= ymd(hoy)));
+    const cols = [[M, "Medicamento", 52], [M + 54, "Dosis", 36], [M + 92, "Horario", 34], [M + 128, "Indicación", 32], [M + 162, "Receta hasta", 22]];
+    need(8); doc.setFont("helvetica", "bold"); doc.setFontSize(8.5); doc.setTextColor(...C.mut); cols.forEach(([x, t]) => doc.text(t, x, y)); y += 2; doc.setDrawColor(...C.line); doc.line(M, y, PW - M, y); y += 4;
+    meds.forEach(m => {
+      const cells = [m.nombre, m.dosis || "", doseTimes(m).map(sHora).join(", "), String(m.indicaciones||"").split("·")[0], m.fin ? fCorta(m.fin) : "continuo"].map((t, i) => doc.splitTextToSize(clean(t), cols[i][2]));
+      const hh = Math.max(...cells.map(c => c.length)) * 3.9 + 2; need(hh + 2);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(...C.ink); cells.forEach((c, i) => doc.text(c, cols[i][0], y));
+      y += hh; doc.setDrawColor(...C.line); doc.line(M, y - 2, PW - M, y - 2);
+    });
+    if(!meds.length) txt("Sin medicamentos activos.", M, 9.5, "normal", C.mut);
+    h2("Apego al tratamiento (tomas marcadas en el pastillero)");
+    const tot = [...w.per.values()].reduce((a, e) => ({ prog: a.prog + e.prog, tom: a.tom + e.tom }), { prog: 0, tom: 0 });
+    txt(`${pct(tot.tom, tot.prog)}% de las tomas: ${tot.tom} de ${tot.prog} en los últimos 30 días.`, M, 11, "bold", pct(tot.tom,tot.prog) >= 90 ? C.acc : pct(tot.tom,tot.prog) >= 70 ? [185,122,0] : C.late);
+    w.per.forEach((e, nme) => {
+      need(7); doc.setFont("helvetica", "normal"); doc.setFontSize(9.5); doc.setTextColor(...C.ink); doc.text(clean(nme), M, y);
+      doc.setFillColor(227,233,229); doc.rect(M + 70, y - 3, 70, 3.6, "F"); doc.setFillColor(...(pct(e.tom,e.prog) >= 80 ? C.acc : C.late)); doc.rect(M + 70, y - 3, 70 * pct(e.tom, e.prog) / 100, 3.6, "F");
+      doc.text(`${e.tom}/${e.prog} (${pct(e.tom, e.prog)}%)${e.omit ? ` · ${e.omit} omitidas` : ""}`, M + 144, y); y += 6;
+    });
+    if(!w.per.size) txt("Sin tomas programadas en este periodo.", M, 9.5, "normal", C.mut);
+    h2("Presión arterial");
+    if(w.bp.length){
+      const avg = k => Math.round(w.bp.reduce((a, x) => a + x[k], 0) / w.bp.length), hi = w.bp.filter(x => x.s >= 140 || x.d >= 90).length;
+      txt(`${w.bp.length} ${w.bp.length === 1 ? "lectura" : "lecturas"} · promedio ${avg("s")}/${avg("d")} mmHg · ${hi} en 140/90 o más.`, M, 10.5, "bold");
+      if(w.bp.length >= 2){
+        need(52); const gx = M + 10, gy = y + 2, gw = CW - 14, gh = 40, lo = Math.min(60, ...w.bp.map(x => x.d)) - 5, hi2 = Math.max(160, ...w.bp.map(x => x.s)) + 5;
+        const X = i => gx + gw * i / (w.bp.length - 1), Y = v => gy + gh * (1 - (v - lo) / (hi2 - lo));
+        doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.mut); doc.setLineWidth(0.15);
+        [60, 80, 100, 120, 140, 160, 180].filter(v => v > lo && v < hi2).forEach(v => { doc.setDrawColor(...C.line); doc.line(gx, Y(v), gx + gw, Y(v)); doc.text(String(v), gx - 8, Y(v) + 1); });
+        doc.setDrawColor(...C.late); doc.setLineDashPattern([1.2, 1.2], 0); doc.line(gx, Y(140), gx + gw, Y(140)); doc.line(gx, Y(90), gx + gw, Y(90)); doc.setLineDashPattern([], 0);
+        doc.setLineWidth(0.6);
+        for(const [k, col] of [["s", C.late], ["d", C.cita]]){ doc.setDrawColor(...col); doc.setFillColor(...col); w.bp.forEach((x, i) => { if(i) doc.line(X(i-1), Y(w.bp[i-1][k]), X(i), Y(x[k])); doc.circle(X(i), Y(x[k]), 0.8, "F"); }); }
+        doc.setLineWidth(0.2); y = gy + gh + 6;
+        doc.setTextColor(...C.late); doc.text("Alta (sistólica)", gx, y); doc.setTextColor(...C.cita); doc.text("Baja (diastólica)", gx + 30, y); doc.setTextColor(...C.mut); doc.text("Línea punteada: 140/90", gx + 64, y); y += 5;
+      }
+      txt(w.bp.slice(-14).map(x => `${String(x.f).slice(8,10)}/${String(x.f).slice(5,7)} ${String(x.f).slice(11,16)}  ${x.s}/${x.d}`).join("   ·   "), M, 8.5, "normal", C.mut);
+    } else txt("Sin lecturas en este periodo.", M, 9.5, "normal", C.mut);
+    const notas = [...S.registros.values()].filter(r => r.pacienteId === w.id && r.notas && !/Anotado por la paciente\.?$/.test(r.notas) && String(r.fechaHora).slice(0,10) >= w.desde).sort((a,b) => String(b.fechaHora).localeCompare(a.fechaHora)).slice(0, 5);
+    if(notas.length){ h2("Notas y síntomas"); notas.forEach(r => txt(`${String(r.fechaHora).replace("T", " ")}: ${r.notas}`, M, 9.5)); }
+    const cs = [...S.citas.values()].filter(c => c.pacienteId === w.id && c.estado !== "cancelada" && c.fecha >= ymd(hoy)).sort((a,b) => (a.fecha+a.hora).localeCompare(b.fecha+b.hora)).slice(0, 3);
+    if(cs.length){ h2("Próximas citas"); cs.forEach(c => txt(`${fCorta(c.fecha)} ${c.hora} · ${c.especialidad || "Consulta"}${c.lugar ? " · " + c.lugar : ""}`, M, 9.5)); }
+  }
+  const np = doc.getNumberOfPages();
+  for(let i = 1; i <= np; i++){ doc.setPage(i); doc.setFont("helvetica", "normal"); doc.setFontSize(7.5); doc.setTextColor(...C.mut); doc.text("Pastillero Familiar · @cybercadtm · Resumen informativo; no sustituye las indicaciones del médico.", M, 272); doc.text(`${i}/${np}`, PW - M, 272, { align: "right" }); }
+  const blob = doc.output("blob");
+  if(await saveFile(`resumen-medico-${norm(firstName(W30[0].id)).replace(/[^a-z0-9]/g, "")}-${ymd(hoy)}.pdf`, blob)) toast("Resumen en PDF listo");
+}
+$("#sumPdf").onclick = () => makePDF();
+
+/* ---------- Actualización automática (app de Android) ---------- */
+const UPDATE_URL = "https://pastillerofamiliar.cybercadtm.com/app/version.json";
+const UPD = { nuevo: null };
+async function checkUpdate(){
+  if(!window.Capacitor?.isNativePlatform?.() || !NAT.App) return;
+  try {
+    const info = await NAT.App.getInfo(), mine = Number(info.build) || 0, prev = ls.get("pf-upd-v", null);
+    if(Date.now() - ls.get("pf-upd-check", 0) < 4*3600000){
+      if(prev && Number(prev.version) > mine){ UPD.nuevo = prev; renderSAlerts(); }
+      return;
+    }
+    const r = await fetch(UPDATE_URL + "?t=" + Date.now(), { cache: "no-store" }); if(!r.ok) return;
+    const v = await r.json(); ls.set("pf-upd-check", Date.now()); ls.set("pf-upd-v", v);
+    if(Number(v.version) > mine && /^https:\/\//.test(v.apk || "")){ UPD.nuevo = v; renderSAlerts(); toast("Hay una versión nueva del Pastillero"); }
+  } catch {}
+}
 
 /* ---------- Pestañas ---------- */
 const VALID = ["asistente","hoy","meds","citas","registro","paciente"];
